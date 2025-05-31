@@ -1,0 +1,45 @@
+{
+  "name": "@rodrigofranca/ultra-media",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/ultra-media.es.js"
+    }
+  },
+  "main": "./dist/ultra-media.umd.js",
+  "module": "./dist/ultra-media.es.js",
+  "files": ["dist", "types", "vscode.html-data.json"],
+  "types": "types/global.d.ts",
+  "customElements": {
+    "plugins": ["cem-plugin-vscode"]
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "watch": "vite build --watch",
+    "preview": "vite preview",
+    "test": "jest",
+    "analyze": "cem analyze"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@custom-elements-manifest/analyzer": "^0.10.4",
+    "@jest/globals": "30.0.0-beta.3",
+    "@types/jest": "^29.5.14",
+    "cem-plugin-vs-code-custom-data-generator": "^1.4.2",
+    "custom-media-element": "^1.4.3",
+    "jest": "^29.7.0",
+    "jsdom": "^26.1.0",
+    "ts-jest": "^29.3.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "dependencies": {
+    "super-media-element": "^1.4.2"
+  }
+}

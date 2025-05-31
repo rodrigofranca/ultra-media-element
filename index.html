@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ultra Media Element</title>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
+  <script>
+    const videos = [
+      'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
+      'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
+      'https://livesim.dashif.org/livesim/chunkdur_1/ato_7/testpic4_8s/Manifest.mpd',
+      'https://download.samplelib.com/mp4/sample-10s.mp4',
+      'https://download.samplelib.com/mp3/sample-15s.mp3'
+    ]
+  
+    function changeVideo(video) {
+      const videoElement = document.querySelector('ultra-media');
+      videoElement.src = video;
+    }
+  
+    document.addEventListener('DOMContentLoaded', () => {
+      const videoElement = document.querySelector('ultra-media');
+      videoElement.src = videos[Math.floor(Math.random() * videos.length)];
+      // videoElement.src = videos[3];
+    });
+
+    const player = document.querySelector('ultra-media');
+
+    player.test
+  </script>
+</head>
+
+
+<body>
+  <div class="player">
+    <media-controller>
+      <ultra-media
+        slot="media"
+        src="https://stream.mux.com/DS00Spx1CV902MCtPj5WknGlR102V5HFkDe/high.mp4"
+      ></ultra-media>
+      <media-control-bar>
+        <media-play-button></media-play-button>
+        <media-mute-button></media-mute-button>
+        <media-volume-range></media-volume-range>
+        <media-time-range></media-time-range>
+        <media-pip-button></media-pip-button>
+        <media-fullscreen-button></media-fullscreen-button>
+      </media-control-bar>
+    </media-controller>
+  </div>
+  <button onclick="changeVideo(videos[0])">HLS 1</button>
+  <button onclick="changeVideo(videos[1])">HLS 2</button>
+  <button onclick="changeVideo(videos[2])">DASH</button>
+  <button onclick="changeVideo(videos[3])">MP4</button>
+  <button onclick="changeVideo(videos[4])">MP3</button>
+  <script type="module" src="/src/index.ts"></script>
+</body>
+
+</html>
+
+<style>
+  .player {
+    width: 90vw;
+    aspect-ratio: 16 / 9;
+    margin: auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  media-controller{
+    width: 100%;
+    height: 100%;
+    border-radius: 16px;
+    overflow: hidden;
+    background-color: black;
+  }
+</style>

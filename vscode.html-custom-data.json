@@ -1,0 +1,17 @@
+{
+  "version": 1.1,
+  "tags": [
+    {
+      "name": "ultra-media",
+      "description": "Ultra Media Element supporting HLS, DASH, MP4 and MP3.\n\n\n---\n\n\n",
+      "attributes": [
+        {
+          "name": "src",
+          "description": "Source URL for the media",
+          "values": []
+        }
+      ],
+      "references": []
+    }
+  ]
+}

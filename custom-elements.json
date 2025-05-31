@@ -1,0 +1,1560 @@
+{
+  "schemaVersion": "1.0.0",
+  "readme": "",
+  "modules": [
+    {
+      "kind": "javascript-module",
+      "path": "src/index.ts",
+      "declarations": [
+        {
+          "kind": "variable",
+          "name": "customElement",
+          "type": {
+            "text": "string"
+          },
+          "default": "'ultra-media'"
+        }
+      ],
+      "exports": [
+        {
+          "kind": "custom-element-definition",
+          "name": "customElement",
+          "declaration": {
+            "name": "UltraMediaElement",
+            "module": "/src/ultra-media-element"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/ultra-media-element.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "Ultra Media Element supporting HLS, DASH, MP4 and MP3.",
+          "name": "UltraMediaElement",
+          "members": [
+            {
+              "kind": "field",
+              "name": "player",
+              "type": {
+                "text": "IMediaPlayer | null"
+              },
+              "privacy": "private",
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "skipAttributes",
+              "type": {
+                "text": "array"
+              },
+              "static": true,
+              "default": "['src']"
+            },
+            {
+              "kind": "field",
+              "name": "test",
+              "type": {
+                "text": "string"
+              },
+              "privacy": "public",
+              "default": "'test'"
+            },
+            {
+              "kind": "method",
+              "name": "initializePlayer",
+              "privacy": "private"
+            },
+            {
+              "kind": "method",
+              "name": "changeSource",
+              "parameters": [
+                {
+                  "name": "newSrc",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "getCurrentFormat",
+              "return": {
+                "type": {
+                  "text": "Format | undefined"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "destroyPlayer",
+              "privacy": "private"
+            }
+          ],
+          "attributes": [
+            {
+              "type": {
+                "text": "string"
+              },
+              "description": "Source URL for the media",
+              "name": "src"
+            }
+          ],
+          "superclass": {
+            "name": "SuperVideoElement",
+            "package": "super-media-element"
+          },
+          "tagName": "ultra-media",
+          "customElement": true
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "UltraMediaElement",
+          "declaration": {
+            "name": "UltraMediaElement",
+            "module": "src/ultra-media-element.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/core/format-detector.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "detectFormat",
+          "return": {
+            "type": {
+              "text": "Format | undefined"
+            }
+          },
+          "parameters": [
+            {
+              "name": "src",
+              "type": {
+                "text": "string"
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "detectFormat",
+          "declaration": {
+            "name": "detectFormat",
+            "module": "src/core/format-detector.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/core/format.ts",
+      "declarations": [],
+      "exports": []
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/core/media-player.ts",
+      "declarations": [],
+      "exports": []
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/core/player-factory.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "getCurrentFormatFromElement",
+          "return": {
+            "type": {
+              "text": "Format | undefined"
+            }
+          },
+          "parameters": [
+            {
+              "name": "el",
+              "type": {
+                "text": "HTMLMediaElement"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "class",
+          "description": "",
+          "name": "PlayerFactory",
+          "members": [
+            {
+              "kind": "method",
+              "name": "create",
+              "static": true,
+              "return": {
+                "type": {
+                  "text": "IMediaPlayer"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "{ src, element, formats }",
+                  "type": {
+                    "text": "PlayerFactoryProps"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "resolveEngine",
+              "privacy": "private",
+              "static": true,
+              "return": {
+                "type": {
+                  "text": "string"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "src",
+                  "type": {
+                    "text": "string"
+                  }
+                },
+                {
+                  "name": "formats",
+                  "type": {
+                    "text": "AvailableFormats"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "getCurrentFormatFromElement",
+          "declaration": {
+            "name": "getCurrentFormatFromElement",
+            "module": "src/core/player-factory.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "PlayerFactory",
+          "declaration": {
+            "name": "PlayerFactory",
+            "module": "src/core/player-factory.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/players/audio-player.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "",
+          "name": "AudioPlayer",
+          "members": [
+            {
+              "kind": "field",
+              "name": "onReady",
+              "type": {
+                "text": "Promise<void>"
+              },
+              "privacy": "public"
+            },
+            {
+              "kind": "method",
+              "name": "load",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "src",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "destroy",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "AudioPlayer",
+          "declaration": {
+            "name": "AudioPlayer",
+            "module": "src/players/audio-player.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/players/dash-player.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "",
+          "name": "DashPlayer",
+          "members": [
+            {
+              "kind": "field",
+              "name": "nativeEl",
+              "type": {
+                "text": "HTMLVideoElement"
+              },
+              "privacy": "private",
+              "default": "element"
+            },
+            {
+              "kind": "field",
+              "name": "onReady",
+              "type": {
+                "text": "Promise<void>"
+              },
+              "privacy": "public",
+              "default": "new Promise((resolve, reject) => { this.setup().then(resolve).catch(reject); })"
+            },
+            {
+              "kind": "field",
+              "name": "dashjs",
+              "type": {
+                "text": "any"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "player",
+              "type": {
+                "text": "any"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "sdkSrc",
+              "type": {
+                "text": "string"
+              },
+              "privacy": "private",
+              "default": "'https://cdn.jsdelivr.net/npm/dashjs@latest/dist/dash.all.min.js'"
+            },
+            {
+              "kind": "field",
+              "name": "config",
+              "type": {
+                "text": "object"
+              },
+              "privacy": "private",
+              "default": "{ streaming: { abr: { autoSwitchBitrate: true } } }"
+            },
+            {
+              "kind": "method",
+              "name": "setup",
+              "privacy": "private"
+            },
+            {
+              "kind": "method",
+              "name": "load",
+              "parameters": [
+                {
+                  "name": "src",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "destroy"
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "DashPlayer",
+          "declaration": {
+            "name": "DashPlayer",
+            "module": "src/players/dash-player.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/players/hls-player.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "",
+          "name": "HlsPlayer",
+          "members": [
+            {
+              "kind": "field",
+              "name": "nativeEl",
+              "type": {
+                "text": "HTMLVideoElement"
+              },
+              "privacy": "private",
+              "default": "element"
+            },
+            {
+              "kind": "field",
+              "name": "onReady",
+              "type": {
+                "text": "Promise<void>"
+              },
+              "privacy": "public",
+              "default": "new Promise((resolve, reject) => { this.setup().then(resolve).catch(reject); })"
+            },
+            {
+              "kind": "field",
+              "name": "Hls",
+              "type": {
+                "text": "any"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "hls",
+              "type": {
+                "text": "any"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "sdkSrc",
+              "type": {
+                "text": "string"
+              },
+              "privacy": "private",
+              "default": "'https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js'"
+            },
+            {
+              "kind": "field",
+              "name": "config",
+              "type": {
+                "text": "object"
+              },
+              "privacy": "private",
+              "default": "{}"
+            },
+            {
+              "kind": "method",
+              "name": "setup",
+              "privacy": "private"
+            },
+            {
+              "kind": "method",
+              "name": "destroy"
+            },
+            {
+              "kind": "method",
+              "name": "load",
+              "parameters": [
+                {
+                  "name": "src",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "HlsPlayer",
+          "declaration": {
+            "name": "HlsPlayer",
+            "module": "src/players/hls-player.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/players/video-player.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "",
+          "name": "VideoPlayer",
+          "members": [
+            {
+              "kind": "field",
+              "name": "onReady",
+              "type": {
+                "text": "Promise<void>"
+              },
+              "privacy": "public"
+            },
+            {
+              "kind": "method",
+              "name": "load",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "src",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "destroy",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "VideoPlayer",
+          "declaration": {
+            "name": "VideoPlayer",
+            "module": "src/players/video-player.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/utils/browserInfo.ts",
+      "declarations": [
+        {
+          "kind": "variable",
+          "name": "info"
+        },
+        {
+          "kind": "variable",
+          "name": "isMobile"
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "info",
+          "declaration": {
+            "name": "info",
+            "module": "src/utils/browserInfo.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isMobile",
+          "declaration": {
+            "name": "isMobile",
+            "module": "src/utils/browserInfo.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/utils/index.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "delay",
+          "parameters": [
+            {
+              "name": "time",
+              "type": {
+                "text": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "serialize",
+          "parameters": [
+            {
+              "name": "props"
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "serializeIframeUrl",
+          "parameters": [
+            {
+              "name": "attrs"
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "delay",
+          "declaration": {
+            "name": "delay",
+            "module": "src/utils/index.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "serialize",
+          "declaration": {
+            "name": "serialize",
+            "module": "src/utils/index.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "serializeIframeUrl",
+          "declaration": {
+            "name": "serializeIframeUrl",
+            "module": "src/utils/index.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/utils/log.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "log",
+          "parameters": [
+            {
+              "name": "message",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "type",
+              "default": "'LOG'",
+              "type": {
+                "text": "keyof typeof colors"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "debug",
+          "parameters": [
+            {
+              "name": "message",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "type",
+              "default": "'LOG'",
+              "type": {
+                "text": "keyof typeof colors"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "showAppInfo"
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "log",
+          "declaration": {
+            "name": "log",
+            "module": "src/utils/log.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "debug",
+          "declaration": {
+            "name": "debug",
+            "module": "src/utils/log.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "showAppInfo",
+          "declaration": {
+            "name": "showAppInfo",
+            "module": "src/utils/log.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/utils/network.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "loadSDK",
+          "return": {
+            "type": {
+              "text": "Promise<SDKType>"
+            }
+          },
+          "parameters": [
+            {
+              "name": "url",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "sdkGlobalVar",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "sdkReadyVar",
+              "optional": true,
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "isLoaded",
+              "default": "() => true",
+              "type": {
+                "text": "(sdk: SDKType) => boolean"
+              }
+            },
+            {
+              "name": "loadScriptFn",
+              "default": "loadScript"
+            }
+          ],
+          "description": "Loads an SDK into the global window namespace."
+        },
+        {
+          "kind": "function",
+          "name": "loadScript",
+          "return": {
+            "type": {
+              "text": "void"
+            }
+          },
+          "parameters": [
+            {
+              "name": "src",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "onLoad",
+              "type": {
+                "text": "() => void"
+              }
+            },
+            {
+              "name": "onError",
+              "default": "noop",
+              "type": {
+                "text": "(e: Error) => void"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "loadDependency",
+          "parameters": [
+            {
+              "name": "url"
+            },
+            {
+              "name": "globalVariable",
+              "default": "''"
+            },
+            {
+              "name": "force",
+              "default": "false"
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "loadSDK",
+          "declaration": {
+            "name": "loadSDK",
+            "module": "src/utils/network.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "loadScript",
+          "declaration": {
+            "name": "loadScript",
+            "module": "src/utils/network.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "loadDependency",
+          "declaration": {
+            "name": "loadDependency",
+            "module": "src/utils/network.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/utils/qs.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "has",
+          "parameters": [
+            {
+              "name": "name",
+              "type": {
+                "text": "QueryStrings"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "get",
+          "parameters": [
+            {
+              "name": "name",
+              "type": {
+                "text": "QueryStrings"
+              }
+            },
+            {
+              "name": "parse",
+              "optional": true,
+              "type": {
+                "text": "(value: any) => any"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "getAll",
+          "parameters": [
+            {
+              "name": "name",
+              "type": {
+                "text": "QueryStrings"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "set",
+          "parameters": [
+            {
+              "name": "name",
+              "type": {
+                "text": "QueryStrings"
+              }
+            },
+            {
+              "name": "value",
+              "type": {
+                "text": "string"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "append",
+          "parameters": [
+            {
+              "name": "name",
+              "type": {
+                "text": "QueryStrings"
+              }
+            },
+            {
+              "name": "value",
+              "type": {
+                "text": "string"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "_delete",
+          "parameters": [
+            {
+              "name": "name",
+              "type": {
+                "text": "QueryStrings"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "sort"
+        },
+        {
+          "kind": "function",
+          "name": "appendSearchParams",
+          "parameters": [
+            {
+              "name": "url",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "searchParams",
+              "type": {
+                "text": "{ [key: string]: any }"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "hasQueryStrings",
+          "parameters": [
+            {
+              "name": "url",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "queryStrings",
+              "type": {
+                "text": "string[]"
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "appendSearchParams",
+          "declaration": {
+            "name": "appendSearchParams",
+            "module": "src/utils/qs.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "hasQueryStrings",
+          "declaration": {
+            "name": "hasQueryStrings",
+            "module": "src/utils/qs.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "append",
+          "declaration": {
+            "name": "append",
+            "module": "src/utils/qs.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "get",
+          "declaration": {
+            "name": "get",
+            "module": "src/utils/qs.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "set",
+          "declaration": {
+            "name": "set",
+            "module": "src/utils/qs.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "has",
+          "declaration": {
+            "name": "has",
+            "module": "src/utils/qs.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "getAll",
+          "declaration": {
+            "name": "getAll",
+            "module": "src/utils/qs.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "delete",
+          "declaration": {
+            "name": "_delete",
+            "module": "src/utils/qs.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "sort",
+          "declaration": {
+            "name": "sort",
+            "module": "src/utils/qs.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "default",
+          "declaration": {
+            "module": "src/utils/qs.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/utils/unit.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "noop",
+          "return": {
+            "type": {
+              "text": "void"
+            }
+          },
+          "parameters": [
+            {
+              "name": "_",
+              "type": {
+                "text": "unknown[]"
+              }
+            }
+          ],
+          "description": "No-operation (noop)."
+        },
+        {
+          "kind": "function",
+          "name": "isNull",
+          "return": {
+            "type": {
+              "text": "value is null"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to check."
+            }
+          ],
+          "description": "Checks if `value` is `null`."
+        },
+        {
+          "kind": "function",
+          "name": "isUndefined",
+          "return": {
+            "type": {
+              "text": "value is undefined"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to check."
+            }
+          ],
+          "description": "Checks if `value` is `undefined`."
+        },
+        {
+          "kind": "function",
+          "name": "isNil",
+          "return": {
+            "type": {
+              "text": "value is null | undefined"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to check."
+            }
+          ],
+          "description": "Checks if `value` is `null` or `undefined`."
+        },
+        {
+          "kind": "function",
+          "name": "getConstructor",
+          "return": {
+            "type": {
+              "text": "T | undefined"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to return the constructor of."
+            }
+          ],
+          "description": "Returns the constructor of the given `value`."
+        },
+        {
+          "kind": "function",
+          "name": "isObject",
+          "return": {
+            "type": {
+              "text": "boolean"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to check."
+            }
+          ],
+          "description": "Checks if `value` is classified as a `Object` object."
+        },
+        {
+          "kind": "function",
+          "name": "isNumber",
+          "return": {
+            "type": {
+              "text": "value is number"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to check."
+            }
+          ],
+          "description": "Checks if `value` is classified as a `Number` object."
+        },
+        {
+          "kind": "function",
+          "name": "isString",
+          "return": {
+            "type": {
+              "text": "value is string"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to check."
+            }
+          ],
+          "description": "Checks if `value` is classified as a `String` object."
+        },
+        {
+          "kind": "function",
+          "name": "isBoolean",
+          "return": {
+            "type": {
+              "text": "value is boolean"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to check."
+            }
+          ],
+          "description": "Checks if `value` is classified as a `Boolean` object."
+        },
+        {
+          "kind": "function",
+          "name": "isFunction",
+          "return": {
+            "type": {
+              "text": "value is Function"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to check."
+            }
+          ],
+          "description": "Checks if `value` is classified as a `Function` object."
+        },
+        {
+          "kind": "function",
+          "name": "isArray",
+          "return": {
+            "type": {
+              "text": "value is unknown[]"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to check."
+            }
+          ],
+          "description": "Checks if `value` is classified as an `Array` object."
+        },
+        {
+          "kind": "function",
+          "name": "isInstanceOf",
+          "return": {
+            "type": {
+              "text": "boolean"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "unknown"
+              },
+              "description": "The value to check."
+            },
+            {
+              "name": "constructor",
+              "type": {
+                "text": "Constructor<unknown>"
+              },
+              "description": "The constructor to check against."
+            }
+          ],
+          "description": "Checks if `value` is an instanceof the given `constructor`."
+        },
+        {
+          "kind": "function",
+          "name": "isPrototypeOf",
+          "return": {
+            "type": {
+              "text": "boolean"
+            }
+          },
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "Object"
+              },
+              "description": "The value whose prototype chain to check."
+            },
+            {
+              "name": "object",
+              "type": {
+                "text": "Constructor<unknown>"
+              },
+              "description": "The object to search for in the prototype chain."
+            }
+          ],
+          "description": "Checks if the `value` prototype chain includes the given `object`."
+        },
+        {
+          "kind": "function",
+          "name": "toPerc",
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "number"
+              }
+            },
+            {
+              "name": "total",
+              "type": {
+                "text": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "sortNumbers",
+          "parameters": [
+            {
+              "name": "min",
+              "type": {
+                "text": "number"
+              }
+            },
+            {
+              "name": "max",
+              "type": {
+                "text": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "generateUUID"
+        },
+        {
+          "kind": "function",
+          "name": "minMax",
+          "parameters": [
+            {
+              "name": "value",
+              "type": {
+                "text": "number"
+              }
+            },
+            {
+              "name": "min",
+              "type": {
+                "text": "number"
+              }
+            },
+            {
+              "name": "max",
+              "type": {
+                "text": "number"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "isEmpty",
+          "parameters": [
+            {
+              "name": "obj"
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "noop",
+          "declaration": {
+            "name": "noop",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isNull",
+          "declaration": {
+            "name": "isNull",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isUndefined",
+          "declaration": {
+            "name": "isUndefined",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isNil",
+          "declaration": {
+            "name": "isNil",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "getConstructor",
+          "declaration": {
+            "name": "getConstructor",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isObject",
+          "declaration": {
+            "name": "isObject",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isNumber",
+          "declaration": {
+            "name": "isNumber",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isString",
+          "declaration": {
+            "name": "isString",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isBoolean",
+          "declaration": {
+            "name": "isBoolean",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isFunction",
+          "declaration": {
+            "name": "isFunction",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isArray",
+          "declaration": {
+            "name": "isArray",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isInstanceOf",
+          "declaration": {
+            "name": "isInstanceOf",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isPrototypeOf",
+          "declaration": {
+            "name": "isPrototypeOf",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "toPerc",
+          "declaration": {
+            "name": "toPerc",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "sortNumbers",
+          "declaration": {
+            "name": "sortNumbers",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "generateUUID",
+          "declaration": {
+            "name": "generateUUID",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "minMax",
+          "declaration": {
+            "name": "minMax",
+            "module": "src/utils/unit.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "isEmpty",
+          "declaration": {
+            "name": "isEmpty",
+            "module": "src/utils/unit.ts"
+          }
+        }
+      ]
+    }
+  ]
+}
