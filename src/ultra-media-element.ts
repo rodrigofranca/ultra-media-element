@@ -55,7 +55,7 @@ export class UltraMediaElement extends SuperVideoElement {
 
   private initializePlayer() {
     if (!this.nativeEl || !this.src) {
-      console.warn('[MyVideoElement] nativeEl or src not available yet');
+      console.warn('[Ultra Media Element] nativeEl or src not available yet');
       return;
     }
 
@@ -67,7 +67,7 @@ export class UltraMediaElement extends SuperVideoElement {
 
   async changeSource(newSrc: string) {
     if (!newSrc) {
-      console.warn('[MyVideoElement] Invalid source');
+      console.warn('[Ultra Media Element] Invalid source');
       return;
     }
 

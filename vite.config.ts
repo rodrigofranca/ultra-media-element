@@ -53,7 +53,7 @@ export default defineConfig(({ command, mode }) => {
     }
   },
   server: mode === 'development' && {
-    host: 'dev.fantascope.uol.com.br',
+    host: 'dev.ultramedia',
     port: 443,
     https: true,
     hmr: {
