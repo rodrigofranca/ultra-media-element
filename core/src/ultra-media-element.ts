@@ -12,22 +12,16 @@ import type { IMediaPlayer } from './core/media-player';
  */
 export class UltraMediaElement extends SuperVideoElement {
 
-  private player: IMediaPlayer | null = null;  
+  private player: IMediaPlayer | null = null;
   static skipAttributes = ['src'];
   public test: string = 'test';
-  
+
   constructor() {
     super();
   }
 
   async connectedCallback() {
     super.connectedCallback?.();
-
-    if (this.loadComplete && !this.isLoaded) {
-      await this.loadComplete;
-    }
-
-    this.initializePlayer();
   }
 
   async attributeChangedCallback(attrName: string, oldValue: string, newValue: string) {

@@ -52,13 +52,13 @@ export default defineConfig(({ command, mode }) => {
       $: path.resolve('./src')
     }
   },
-  server: mode === 'development' && {
-    host: 'dev.ultramedia',
-    port: 443,
-    https: true,
-    hmr: {
-      overlay: false
-    }
-  }
+  // server: mode === 'development' && {
+  //   // host: 'dev.ultramedia',
+  //   port: 443,
+  //   https: true,
+  //   hmr: {
+  //     overlay: false
+  //   }
+  // }
 }
 });

@@ -7,55 +7,55 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Ultra Media Element</title>
   <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/hls-video-element@1.2/+esm"></script>
+  <script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
   <script>
     const videos = [
+      'https://stream.mux.com/A3VXy02VoUinw01pwyomEO3bHnG4P32xzV7u1j1FSzjNg.m3u8',
+      'https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8?ref=developerinsider.co',
       'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
       'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
       'https://livesim.dashif.org/livesim/chunkdur_1/ato_7/testpic4_8s/Manifest.mpd',
       'https://download.samplelib.com/mp4/sample-10s.mp4',
       'https://download.samplelib.com/mp3/sample-15s.mp3'
     ]
-  
+
     function changeVideo(video) {
       const videoElement = document.querySelector('ultra-media');
       videoElement.src = video;
     }
-  
+
     document.addEventListener('DOMContentLoaded', () => {
       const videoElement = document.querySelector('ultra-media');
-      videoElement.src = videos[Math.floor(Math.random() * videos.length)];
-      // videoElement.src = videos[3];
+      // const videoElement = document.querySelector('hls-video');
+      // videoElement.src = videos[Math.floor(Math.random() * videos.length)];
+      // videoElement.src = videos[2];
     });
 
     const player = document.querySelector('ultra-media');
-
-    player.test
   </script>
 </head>
 
 
 <body>
   <div class="player">
-    <media-controller>
-      <ultra-media
-        slot="media"
-        src="https://stream.mux.com/DS00Spx1CV902MCtPj5WknGlR102V5HFkDe/high.mp4"
-      ></ultra-media>
-      <media-control-bar>
-        <media-play-button></media-play-button>
-        <media-mute-button></media-mute-button>
-        <media-volume-range></media-volume-range>
-        <media-time-range></media-time-range>
-        <media-pip-button></media-pip-button>
-        <media-fullscreen-button></media-fullscreen-button>
-      </media-control-bar>
-    </media-controller>
+    <ultra-media
+      id="ultraMedia"
+      src="https://stream.mux.com/A3VXy02VoUinw01pwyomEO3bHnG4P32xzV7u1j1FSzjNg.m3u8"
+      controls
+    >
+    </ultra-media>
+    <ultra-media-ad
+      video="ultraMedia"
+      ad-tag-url="https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator="
+    >
+    </ultra-media-ad>
   </div>
   <button onclick="changeVideo(videos[0])">HLS 1</button>
   <button onclick="changeVideo(videos[1])">HLS 2</button>
   <button onclick="changeVideo(videos[2])">DASH</button>
   <button onclick="changeVideo(videos[3])">MP4</button>
-  <button onclick="changeVideo(videos[4])">MP3</button>
+  <button onclick="changeVideo(videos[6])">MP3</button>
   <script type="module" src="/src/index.ts"></script>
 </body>
 
@@ -69,8 +69,11 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    position: relative;
   }
-  media-controller{
+  media-controller, ultra-media, ultra-media-ad {
+    /* position: absolute; */
+    inset: 0;
     width: 100%;
     height: 100%;
     border-radius: 16px;
