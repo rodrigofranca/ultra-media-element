@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ultra Media Player - Subtitles Example</title>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
+  <script type="module" src="../dist/ultra-media-element.es.js"></script>
+</head>
+
+<body>
+  <div class="container">
+    <media-controller defaultsubtitles>
+      <video
+      playsinline muted crossorigin
+      slot="media"
+      src="https://stream.mux.com/A3VXy02VoUinw01pwyomEO3bHnG4P32xzV7u1j1FSzjNg/low.mp4"
+    >
+      <track label="English" kind="captions" srclang="en" src=https://media-chrome.mux.dev/examples/vanilla/vtt/en-cc.vtt" />
+    </video>
+      <!-- <ultra-media
+        id="subtitlesPlayer"
+        src="https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8"
+        slot="media"
+      >
+        <track
+          label="English"
+          kind="captions"
+          srclang="en"
+          src="subtitles/en.vtt"
+          default
+        />
+        <track
+          label="Português"
+          kind="captions"
+          srclang="pt"
+          src="subtitles/pt.vtt"
+          default=""
+        />
+        <track
+          label="Español"
+          kind="captions"
+          srclang="es"
+          src="subtitles/es.vtt"
+        />
+      </ultra-media> -->
+
+      <!-- Top Controls -->
+      <!-- <media-control-bar class="top-bar">
+        <media-time-display showduration></media-time-display>
+        <span class="title">Subtitles Demo</span>
+        <media-captions-button></media-captions-button>
+        <media-fullscreen-button></media-fullscreen-button>
+      </media-control-bar> -->
+
+      <!-- Center Controls -->
+      <!-- <div class="center-controls">
+        <media-play-button></media-play-button>
+        <media-seek-backward-button seek-offset="10"></media-seek-backward-button>
+        <media-seek-forward-button seek-offset="10"></media-seek-forward-button>
+      </div> -->
+
+      <!-- Bottom Controls -->
+      <!-- <media-control-bar class="bottom-bar"> -->
+        <media-play-button></media-play-button>
+        <!-- <media-seek-backward-button seekoffset="15"></media-seek-backward-button>
+        <media-seek-forward-button seekoffset="15"></media-seek-forward-button>
+        <media-mute-button></media-mute-button>
+        <media-time-range></media-time-range>
+        <media-time-display showduration="" remaining=""></media-time-display>
+        <media-captions-button></media-captions-button> -->
+        <media-captions-menu hidden id="menu1" anchor="menu-button1"></media-captions-menu>
+        <media-captions-menu-button id="menu-button1" invoketarget="menu1"></media-captions-menu-button>
+        <!-- <media-fullscreen-button></media-fullscreen-button> -->
+      </media-control-bar>
+    <!-- </media-controller> -->
+  </div>
+
+  <style>
+    .container {
+      width: 90vw;
+      aspect-ratio: 16 / 9;
+      margin: 2rem auto;
+      border-radius: 16px;
+      overflow: hidden;
+      background-color: rgb(44, 44, 44);
+    }
+
+    media-controller {
+      width: 100%;
+      height: 100%;
+      --media-primary-color: #f5f5f5;
+      --media-secondary-color: #e91e63;
+      --media-background-color: rgba(20, 20, 20, 0.7);
+      --media-control-background: var(--media-background-color);
+      --media-control-hover-background: var(--media-background-color);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    ultra-media {
+      width: 100%;
+      height: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      background-color: black;
+    }
+
+
+    /* media-controller:hover .center-controls,
+    media-controller[media-paused] .center-controls {
+      opacity: 1;
+    }
+
+    media-play-button,
+    media-seek-backward-button,
+    media-seek-forward-button {
+      --media-button-icon-width: 36px;
+      --media-button-icon-height: 36px;
+    }
+
+    media-control-bar > *:hover {
+      --media-control-background: var(--media-secondary-color);
+      --media-control-hover-background: var(--media-secondary-color);
+    }
+
+    ::cue {
+      background-color: rgba(0, 0, 0, 0.8);
+      color: white;
+      font-family: system-ui, -apple-system, sans-serif;
+    } */
+  </style>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Basic Ultra Media Player</title>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
+  <script type="module" src="../dist/ultra-media-element.es.js"></script>
+</head>
+
+<body>
+  <div class="container">
+    <ultra-media
+      id="basicPlayer"
+      src="https://download.samplelib.com/mp4/sample-10s.mp4"
+      controls
+    >
+    </ultra-media>
+  </div>
+
+  <style>
+    .container {
+      width: 90vw;
+      aspect-ratio: 16 / 9;
+      margin: 2rem auto;
+      border-radius: 16px;
+      overflow: hidden;
+      background-color: rgb(44, 44, 44);
+    }
+
+    ultra-media {
+      width: 100%;
+      height: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      background-color: black;
+    }
+  </style>
+</body>
+</html>

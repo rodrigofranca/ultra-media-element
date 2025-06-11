@@ -27,7 +27,8 @@
     "watch": "vite build --watch",
     "preview": "vite preview",
     "test": "jest",
-    "analyze": "cem analyze"
+    "analyze": "cem analyze",
+    "serve:examples": "wet serve --cors --livereload --redirect :examples/ --log-level error"
   },
   "keywords": [],
   "author": "",
@@ -45,7 +46,8 @@
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-dts": "^4.5.4",
-    "vite-plugin-mkcert": "^1.17.8"
+    "vite-plugin-mkcert": "^1.17.8",
+    "wet-run": "^1.2.5"
   },
   "dependencies": {
     "ima-ad-player": "^0.5.7",

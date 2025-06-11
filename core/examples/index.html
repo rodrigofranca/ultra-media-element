@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ultra Media Element Examples</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+</head>
+
+<body>
+  <main class="container">
+    <h1>Ultra Media Element Examples</h1>
+    <p>Click on the examples below to see different use cases of the Ultra Media Element.</p>
+
+    <div class="grid">
+      <article>
+        <header>
+          <h3>Basic Player</h3>
+          <p>Simple video playback with basic controls.</p>
+        </header>
+        <a href="basic-player.html" role="button">View Example</a>
+      </article>
+
+      <article>
+        <header>
+          <h3>Ad Player</h3>
+          <p>Integration with Google IMA ads and side-by-side display.</p>
+        </header>
+        <a href="ad-player.html" role="button">View Example</a>
+      </article>
+
+      <article>
+        <header>
+          <h3>HLS Player</h3>
+          <p>HLS streaming with multiple stream examples.</p>
+        </header>
+        <a href="hls-player.html" role="button">View Example</a>
+      </article>
+
+      <article>
+        <header>
+          <h3>DASH Player</h3>
+          <p>DASH streaming with live and VOD examples.</p>
+        </header>
+        <a href="dash-player.html" role="button">View Example</a>
+      </article>
+
+      <article>
+        <header>
+          <h3>Audio Player</h3>
+          <p>Audio playback with compact UI and track selection.</p>
+        </header>
+        <a href="audio-player.html" role="button">View Example</a>
+      </article>
+
+      <article>
+        <header>
+          <h3>Media Chrome Player</h3>
+          <p>Advanced UI with custom media-chrome controls.</p>
+        </header>
+        <a href="media-chrome-player.html" role="button">View Example</a>
+      </article>
+
+      <article>
+        <header>
+          <h3>Subtitles Player</h3>
+          <p>Multi-language subtitles support with WebVTT.</p>
+        </header>
+        <a href="subtitles-player.html" role="button">View Example</a>
+      </article>
+    </div>
+
+    <footer>
+      <h2>Getting Started</h2>
+      <ol>
+        <li>Build the core library:
+          <pre><code>cd ..
+npm install
+npm run build</code></pre>
+        </li>
+        <li>Start the development server:
+          <pre><code>npm run serve:examples</code></pre>
+        </li>
+        <li>Open <a href="http://localhost:3000/">http://localhost:3000/</a> in your browser</li>
+      </ol>
+    </footer>
+  </main>
+
+  <style>
+    :root {
+      --primary: #e91e63;
+      --primary-hover: #d81557;
+    }
+
+    body {
+      padding: 2rem 0;
+    }
+
+    .container {
+      max-width: 1200px;
+    }
+
+    article {
+      margin: 0;
+      padding: 1.5rem;
+      background-color: #2c2c2c;
+      border-radius: 8px;
+    }
+
+    article header {
+      margin-bottom: 1rem;
+    }
+
+    article h3 {
+      margin: 0;
+      color: var(--primary);
+    }
+
+    article p {
+      margin: 0.5rem 0 0;
+      opacity: 0.8;
+    }
+
+    footer {
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid #444;
+    }
+
+    pre {
+      background-color: #1c1c1c;
+      padding: 1rem;
+      border-radius: 4px;
+      margin: 1rem 0;
+    }
+  </style>
+</body>
+</html>

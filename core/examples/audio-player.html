@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ultra Media Player - Audio Example</title>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
+  <script type="module" src="../dist/ultra-media-element.es.js"></script>
+</head>
+
+<body>
+  <div class="container">
+    <ultra-media
+      id="audioPlayer"
+      src="https://download.samplelib.com/mp3/sample-15s.mp3"
+      controls
+    >
+    </ultra-media>
+  </div>
+
+  <div class="controls">
+    <h3>Audio Tracks:</h3>
+    <button onclick="changeTrack(tracks[0])">Sample 1 (15s)</button>
+    <button onclick="changeTrack(tracks[1])">Sample 2 (30s)</button>
+    <button onclick="changeTrack(tracks[2])">Sample 3 (3min)</button>
+  </div>
+
+  <script>
+    const tracks = [
+      'https://download.samplelib.com/mp3/sample-15s.mp3',
+      'https://download.samplelib.com/mp3/sample-30s.mp3',
+      'https://download.samplelib.com/mp3/sample-3m.mp3'
+    ];
+
+    function changeTrack(url) {
+      const player = document.getElementById('audioPlayer');
+      player.src = url;
+    }
+  </script>
+
+  <style>
+    .container {
+      width: 90vw;
+      max-width: 600px;
+      margin: 2rem auto;
+      border-radius: 16px;
+      overflow: hidden;
+      background-color: rgb(44, 44, 44);
+      padding: 1rem;
+    }
+
+    ultra-media {
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      background-color: black;
+      min-height: 80px;
+    }
+
+    .controls {
+      width: 90vw;
+      max-width: 600px;
+      margin: 1rem auto;
+      text-align: center;
+    }
+
+    button {
+      margin: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      border: none;
+      background-color: #2c2c2c;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #3c3c3c;
+    }
+  </style>
+</body>
+</html>

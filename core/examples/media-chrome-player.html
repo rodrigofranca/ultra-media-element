@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ultra Media Player - Media Chrome Controls</title>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
+  <script type="module" src="../dist/ultra-media-element.es.js"></script>
+</head>
+
+<body>
+  <div class="container">
+    <media-controller>
+      <ultra-media
+        id="customPlayer"
+        src="https://stream.mux.com/A3VXy02VoUinw01pwyomEO3bHnG4P32xzV7u1j1FSzjNg.m3u8"
+        slot="media"
+      >
+      </ultra-media>
+
+      <!-- Top Controls -->
+      <media-control-bar class="top-bar">
+        <media-time-display showduration></media-time-display>
+        <span class="title">Custom Player Controls</span>
+        <media-pip-button></media-pip-button>
+        <media-fullscreen-button></media-fullscreen-button>
+      </media-control-bar>
+
+      <!-- Center Controls -->
+      <div class="center-controls">
+        <media-play-button></media-play-button>
+        <media-seek-backward-button seek-offset="10"></media-seek-backward-button>
+        <media-seek-forward-button seek-offset="10"></media-seek-forward-button>
+      </div>
+
+      <!-- Bottom Controls -->
+      <media-control-bar class="bottom-bar">
+        <media-play-button></media-play-button>
+        <media-mute-button></media-mute-button>
+        <media-volume-range></media-volume-range>
+        <media-time-range></media-time-range>
+        <media-playback-rate-button>
+          <media-playback-rate-range></media-playback-rate-range>
+        </media-playback-rate-button>
+        <media-quality-button>
+          <media-quality-range></media-quality-range>
+        </media-quality-button>
+      </media-control-bar>
+    </media-controller>
+  </div>
+
+  <style>
+    .container {
+      width: 90vw;
+      aspect-ratio: 16 / 9;
+      margin: 2rem auto;
+      border-radius: 16px;
+      overflow: hidden;
+      background-color: rgb(44, 44, 44);
+    }
+
+    media-controller {
+      width: 100%;
+      height: 100%;
+      --media-primary-color: #f5f5f5;
+      --media-secondary-color: #e91e63;
+      --media-background-color: rgba(20, 20, 20, 0.7);
+      --media-control-background: var(--media-background-color);
+      --media-control-hover-background: var(--media-background-color);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    ultra-media {
+      width: 100%;
+      height: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      background-color: black;
+    }
+
+    .top-bar {
+      justify-content: space-between;
+      background: linear-gradient(to bottom, var(--media-background-color), transparent);
+      padding: 0.5rem 1rem;
+    }
+
+    .bottom-bar {
+      background: linear-gradient(to top, var(--media-background-color), transparent);
+      padding: 0.5rem;
+    }
+
+    .title {
+      color: var(--media-primary-color);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 1.1em;
+    }
+
+    .center-controls {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      gap: 1rem;
+      padding: 1rem;
+      border-radius: 8px;
+      background: var(--media-background-color);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    media-controller:hover .center-controls,
+    media-controller[media-paused] .center-controls {
+      opacity: 1;
+    }
+
+    /* Customize control sizes */
+    media-play-button,
+    media-seek-backward-button,
+    media-seek-forward-button {
+      --media-button-icon-width: 36px;
+      --media-button-icon-height: 36px;
+    }
+
+    /* Hover effects */
+    media-control-bar > *:hover {
+      --media-control-background: var(--media-secondary-color);
+      --media-control-hover-background: var(--media-secondary-color);
+    }
+  </style>
+</body>
+</html>

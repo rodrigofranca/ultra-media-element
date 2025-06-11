@@ -54,6 +54,9 @@ importers:
       vite-plugin-mkcert:
         specifier: ^1.17.8
         version: 1.17.8(vite@6.3.5(@types/node@22.15.30))
+      wet-run:
+        specifier: ^1.2.5
+        version: 1.2.5
 
 packages:
 
@@ -412,6 +415,12 @@ packages:
 
   '@github/catalyst@1.7.0':
     resolution: {integrity: sha512-qOAxrDdRZz9+v4y2WoAfh11rpRY/x4FRofPNmJyZFzAjubtzE3sCa/tAycWWufmQGoYiwwzL/qJBBgyg7avxPw==}
+
+  '@hono/node-server@1.14.4':
+    resolution: {integrity: sha512-DnxpshhYewr2q9ZN8ez/M5mmc3sucr8CT1sIgIy1bkeUXut9XWDkqHoFHRhWIQgkYnKpVRxunyhK7WzpJeJ6qQ==}
+    engines: {node: '>=18.14.1'}
+    peerDependencies:
+      hono: ^4
 
   '@istanbuljs/load-nyc-config@1.1.0':
     resolution: {integrity: sha512-VjeHSlIzpv/NyD3N0YuHfXOPDIixcA1q2ZV98wsMqcYlPmv2n3Yb2lYP9XMElnaFVXg5A7YLTeLu6V84uQDjmQ==}
@@ -1343,6 +1352,10 @@ packages:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
 
+  hono@4.7.11:
+    resolution: {integrity: sha512-rv0JMwC0KALbbmwJDEnxvQCeJh+xbS3KEWW5PC9cMJ08Ur9xgatI0HmtgYZfOdOSOeYsp5LO2cOhdI8cLEbDEQ==}
+    engines: {node: '>=16.9.0'}
+
   html-encoding-sniffer@4.0.0:
     resolution: {integrity: sha512-Y22oTqIU4uuPgEemfz7NDJz6OeKf12Lsu+QC+s3BVpda64lTiMYCyGwg5ki4vFxkMwQdeZDl2adZoqUgdFuTgQ==}
     engines: {node: '>=18'}
@@ -1875,6 +1888,11 @@ packages:
   pkg-types@2.1.0:
     resolution: {integrity: sha512-wmJwA+8ihJixSoHKxZJRBQG1oY8Yr9pGLzRmSsNms0iNWyHHAlZCa7mmKiFR10YPZuz/2k169JiS/inOjBCZ2A==}
 
+  playwright-core@1.53.0:
+    resolution: {integrity: sha512-mGLg8m0pm4+mmtB7M89Xw/GSqoNC+twivl8ITteqvAndachozYe2ZA7srU6uleV1vEdAHYqjq+SV8SNxRRFYBw==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   postcss@8.5.4:
     resolution: {integrity: sha512-QSa9EBe+uwlGTFmHsPKokv3B/oEMQZxfqW0QqNCyhpa6mB1afzulwn8hihglqAb2pOw+BJgNlmXQ8la2VeHB7w==}
     engines: {node: ^10 || ^12 || >=14}
@@ -2246,6 +2264,11 @@ packages:
   webidl-conversions@7.0.0:
     resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
     engines: {node: '>=12'}
+
+  wet-run@1.2.5:
+    resolution: {integrity: sha512-CnZIgzzSFOkArUkVPbbMKn9q8VdDlVd948GxaYgMOUSn0cB6QDIgcwP3O0Z+yu2oCOZNVrxq70aJaxX4usXsWQ==}
+    engines: {node: '>=18.3.0'}
+    hasBin: true
 
   whatwg-encoding@3.1.1:
     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}
@@ -2635,6 +2658,10 @@ snapshots:
     optional: true
 
   '@github/catalyst@1.7.0': {}
+
+  '@hono/node-server@1.14.4(hono@4.7.11)':
+    dependencies:
+      hono: 4.7.11
 
   '@istanbuljs/load-nyc-config@1.1.0':
     dependencies:
@@ -3744,6 +3771,8 @@ snapshots:
 
   he@1.2.0: {}
 
+  hono@4.7.11: {}
+
   html-encoding-sniffer@4.0.0:
     dependencies:
       whatwg-encoding: 3.1.1
@@ -4497,6 +4526,8 @@ snapshots:
       exsolve: 1.0.5
       pathe: 2.0.3
 
+  playwright-core@1.53.0: {}
+
   postcss@8.5.4:
     dependencies:
       nanoid: 3.3.11
@@ -4812,6 +4843,17 @@ snapshots:
       makeerror: 1.0.12
 
   webidl-conversions@7.0.0: {}
+
+  wet-run@1.2.5:
+    dependencies:
+      '@hono/node-server': 1.14.4(hono@4.7.11)
+      hono: 4.7.11
+      playwright-core: 1.53.0
+      semver: 7.7.2
+      ws: 8.18.2
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   whatwg-encoding@3.1.1:
     dependencies:

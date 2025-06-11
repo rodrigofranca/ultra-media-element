@@ -9,9 +9,10 @@ import { Format } from './core/format';
 export declare class UltraMediaElement extends SuperVideoElement {
     private player;
     static skipAttributes: string[];
-    test: string;
+    isLive: boolean;
     constructor();
     connectedCallback(): Promise<void>;
+    static get observedAttributes(): string[];
     attributeChangedCallback(attrName: string, oldValue: string, newValue: string): Promise<void>;
     private initializePlayer;
     changeSource(newSrc: string): Promise<void>;

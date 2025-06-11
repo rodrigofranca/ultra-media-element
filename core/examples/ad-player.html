@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ultra Media Player with Ads</title>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
+  <script type="module" src="../dist/ultra-media-element.es.js"></script>
+  <script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
+</head>
+
+<body>
+  <div class="container">
+    <div class="video-player">
+      <ultra-media
+        id="mainPlayer"
+        src="https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8"
+        controls
+      >
+      </ultra-media>
+    </div>
+    <div class="ad-player">
+      <ultra-media-ad
+        video="mainPlayer"
+        ad-tag-url="https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/vmap_ad_samples&sz=640x480&cust_params=sample_ar%3Dpremidpost&ciu_szs=300x250&gdfp_req=1&ad_rule=1&output=vmap&unviewed_position_start=1&env=vp&impl=s&cmsid=496&vid=short_onecue&correlator="
+        mute-only
+      >
+      </ultra-media-ad>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const container = document.querySelector('.container');
+      const adPlayer = container.querySelector('ultra-media-ad');
+
+      adPlayer.addEventListener('ad_begin', () => {
+        container.classList.add('active');
+      });
+
+      adPlayer.addEventListener('ad_end', () => {
+        container.classList.remove('active');
+      });
+    });
+  </script>
+
+  <style>
+    .container {
+      width: 90vw;
+      aspect-ratio: 16 / 9;
+      margin: 2rem auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      background-color: rgb(44, 44, 44);
+      padding: 0;
+      gap: 0;
+    }
+
+    .container.active {
+      --padding: 2rem;
+      padding: var(--padding);
+      gap: calc(var(--padding) / 2);
+    }
+
+    ultra-media, ultra-media-ad {
+      position: relative;
+      width: 100%;
+      border-radius: 8px;
+      overflow: hidden;
+      background-color: black;
+      aspect-ratio: 16 / 9;
+    }
+
+    .video-player {
+      width: 100%;
+    }
+
+    .ad-player {
+      width: 0%;
+    }
+
+    .active .video-player,
+    .active .ad-player {
+      width: 50%;
+    }
+
+    .video-player,
+    .ad-player {
+      height: 100%;
+      aspect-ratio: 16 / 9;
+      display: flex;
+      align-items: center;
+    }
+
+    .container,
+    .video-player,
+    .ad-player {
+      transition: all 0.3s ease-in-out;
+    }
+  </style>
+</body>
+</html>
