@@ -5,10 +5,12 @@ import { HlsPlayer } from "../players/hls-player";
 import { VideoPlayer } from "../players/video-player";
 import { DashPlayer } from "../players/dash-player";
 import { AudioPlayer } from "../players/audio-player";
+import { YouTubePlayer } from "../players/youtube-player";
 
 export type PlayerFactoryProps = {
   src: string;
   element: HTMLMediaElement;
+  container?: HTMLElement;
   formats?: AvailableFormats;
 };
 
@@ -16,14 +18,16 @@ const DEFAULT_FORMATS: AvailableFormats = {
   [Format.HLS]: "hls.js",
   [Format.MP4]: "video/mp4",
   [Format.DASH]: "dash.js",
-  [Format.AUDIO]: "audio/mp3"
+  [Format.AUDIO]: "audio/mp3",
+  [Format.YOUTUBE]: "youtube",
 };
 
-const engines = new Map<string, (el: HTMLVideoElement) => IMediaPlayer>([
+const engines = new Map<string, (el: HTMLVideoElement, container?: HTMLElement) => IMediaPlayer>([
   ["hls.js", (el) => new HlsPlayer(el)],
   ["video/mp4", (el) => new VideoPlayer(el)],
   ["dash.js", (el) => new DashPlayer(el)],
-  ["audio/mp3", (el) => new AudioPlayer(el)]
+  ["audio/mp3", (el) => new AudioPlayer(el)],
+  ["youtube", (el, container) => new YouTubePlayer(el, container)],
 ]);
 
 export function getCurrentFormatFromElement(el: HTMLMediaElement): Format | undefined {
@@ -33,14 +37,15 @@ export function getCurrentFormatFromElement(el: HTMLMediaElement): Format | unde
     'hls.js': Format.HLS,
     'dash.js': Format.DASH,
     'video/mp4': Format.MP4,
-    'audio/mp3': Format.AUDIO
+    'audio/mp3': Format.AUDIO,
+    'youtube': Format.YOUTUBE,
   };
 
   return type ? map[type] : undefined;
 }
 
 export class PlayerFactory {
-  static create({ src, element, formats }: PlayerFactoryProps): IMediaPlayer {
+  static create({ src, element, container, formats }: PlayerFactoryProps): IMediaPlayer {
     const engineType = this.resolveEngine(src, formats ?? DEFAULT_FORMATS);
     const engine = engines.get(engineType);
 
@@ -49,7 +54,7 @@ export class PlayerFactory {
     }
 
     element.dataset.type = engineType;
-    const player = engine(element as HTMLVideoElement);
+    const player = engine(element as HTMLVideoElement, container);
 
     player.onReady.then(() => player.load(src));
     return player;

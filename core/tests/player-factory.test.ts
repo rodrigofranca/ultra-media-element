@@ -2,6 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { PlayerFactory } from "../src/core/player-factory";
 import { VideoPlayer } from "../src/players/video-player";
 import { HlsPlayer } from "../src/players/hls-player";
+import { YouTubePlayer } from '../src/players/youtube-player';
 import { Format } from "../src/core/format";
 
 function createVideoElement(): HTMLVideoElement {
@@ -28,6 +29,17 @@ describe("PlayerFactory", () => {
     });
 
     expect(player).toBeInstanceOf(HlsPlayer);
+    await expect(player.onReady).resolves.toBeUndefined();
+  });
+
+  it("creates a YouTubePlayer for youtube.com URL", async () => {
+    const element = createVideoElement();
+    const player = PlayerFactory.create({
+      src: "https://www.youtube.com/watch?v=VIDEO_ID",
+      element,
+    });
+
+    expect(player).toBeInstanceOf(YouTubePlayer);
     await expect(player.onReady).resolves.toBeUndefined();
   });
 

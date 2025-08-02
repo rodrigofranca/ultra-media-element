@@ -36,6 +36,11 @@ This directory contains various examples demonstrating the usage of the Ultra Me
    - Custom control layout
    - Interactive hover effects
 
+7. **YouTube Player** (`youtube-player.html`)
+   - YouTube video playback
+   - Basic controls
+   - Minimal setup
+
 ## Local Development
 
 ### Prerequisites

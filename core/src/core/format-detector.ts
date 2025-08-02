@@ -7,6 +7,7 @@ export function detectFormat(src: string): Format | undefined {
   if (lower.includes(".mpd")) return Format.DASH;
   if (/\.(mp4|webm|ogg)/.test(lower)) return Format.MP4;
   if (/\.(mp3|wav|ogg)/.test(lower)) return Format.AUDIO;
+  if (/(youtube\.com\/watch\?v=|youtu\.be\/)/.test(lower)) return Format.YOUTUBE;
 
   return undefined;
 }

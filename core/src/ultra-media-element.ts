@@ -81,6 +81,7 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
     this.player = PlayerFactory.create({
       src: this.src,
       element: this.nativeEl,
+      container: this,
     });
 
     this.player.onError?.((error: MediaPlayerError) => {
