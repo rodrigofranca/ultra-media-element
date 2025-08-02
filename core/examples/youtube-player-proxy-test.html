@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Player Proxy Test - Ultra Media Element</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    ultra-media {
+      width: 100%;
+      max-width: 640px;
+      height: 360px;
+      display: block;
+      margin: 20px 0;
+      border: 1px solid #ccc;
+    }
+    
+    .controls {
+      margin: 20px 0;
+      padding: 20px;
+      background: #f5f5f5;
+      border-radius: 8px;
+    }
+    
+    .controls button {
+      margin: 5px;
+      padding: 8px 16px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    .controls button:hover {
+      background: #0056b3;
+    }
+    
+    .controls input {
+      margin: 5px;
+      padding: 5px;
+    }
+    
+    .status {
+      margin: 10px 0;
+      font-family: monospace;
+      background: #fff;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>YouTube Player Proxy Test</h1>
+  <p>This example demonstrates how the YouTube player proxy system works, making the nativeEl act as a proxy for YouTube player properties and methods.</p>
+  
+  <ultra-media 
+    id="player" 
+    src="https://www.youtube.com/watch?v=dQw4w9WgXcQ">
+  </ultra-media>
+  
+  <div class="controls">
+    <h3>Proxy Test Controls</h3>
+    
+    <div>
+      <button onclick="playVideo()">Play</button>
+      <button onclick="pauseVideo()">Pause</button>
+      <button onclick="seekTo(30)">Seek to 30s</button>
+      <button onclick="seekTo(60)">Seek to 1min</button>
+    </div>
+    
+    <div>
+      <label>Volume: </label>
+      <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="1" oninput="setVolume(this.value)">
+      <span id="volumeDisplay">1.0</span>
+    </div>
+    
+    <div>
+      <label>Playback Rate: </label>
+      <select id="rateSelect" onchange="setPlaybackRate(this.value)">
+        <option value="0.25">0.25x</option>
+        <option value="0.5">0.5x</option>
+        <option value="1" selected>1x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+        <option value="2">2x</option>
+      </select>
+    </div>
+    
+    <div>
+      <button onclick="toggleMute()">Toggle Mute</button>
+      <button onclick="updateStatus()">Update Status</button>
+    </div>
+  </div>
+  
+  <div class="status" id="status">
+    Status will appear here...
+  </div>
+
+  <script type="module">
+    import '../dist/ultra-media-element.es.js';
+    
+    const player = document.getElementById('player');
+    const statusDiv = document.getElementById('status');
+    
+    // Global functions for button controls
+    window.playVideo = () => {
+      player.play();
+      console.log('Called player.play()');
+    };
+    
+    window.pauseVideo = () => {
+      player.pause();
+      console.log('Called player.pause()');
+    };
+    
+    window.seekTo = (time) => {
+      player.currentTime = time;
+      console.log(`Set currentTime to ${time}`);
+    };
+    
+    window.setVolume = (volume) => {
+      player.volume = parseFloat(volume);
+      document.getElementById('volumeDisplay').textContent = volume;
+      console.log(`Set volume to ${volume}`);
+    };
+    
+    window.setPlaybackRate = (rate) => {
+      player.playbackRate = parseFloat(rate);
+      console.log(`Set playbackRate to ${rate}`);
+    };
+    
+    window.toggleMute = () => {
+      player.muted = !player.muted;
+      console.log(`Muted: ${player.muted}`);
+    };
+    
+    window.updateStatus = () => {
+      const status = {
+        currentTime: player.currentTime?.toFixed(2) || 'N/A',
+        duration: player.duration?.toFixed(2) || 'N/A',
+        volume: player.volume?.toFixed(2) || 'N/A',
+        muted: player.muted,
+        paused: player.paused,
+        ended: player.ended,
+        playbackRate: player.playbackRate || 'N/A'
+      };
+      
+      statusDiv.innerHTML = `
+        <strong>Player Status (via nativeEl proxy):</strong><br>
+        Current Time: ${status.currentTime}s<br>
+        Duration: ${status.duration}s<br>
+        Volume: ${status.volume}<br>
+        Muted: ${status.muted}<br>
+        Paused: ${status.paused}<br>
+        Ended: ${status.ended}<br>
+        Playback Rate: ${status.playbackRate}x
+      `;
+      
+      console.log('Player status:', status);
+    };
+    
+    // Auto-update status every 2 seconds
+    setInterval(() => {
+      if (player.currentTime > 0) {
+        updateStatus();
+      }
+    }, 2000);
+    
+    // Listen to events on the video element (should work with proxy)
+    player.addEventListener('play', () => console.log('Event: play'));
+    player.addEventListener('pause', () => console.log('Event: pause'));
+    player.addEventListener('timeupdate', () => console.log('Event: timeupdate'));
+    player.addEventListener('volumechange', () => console.log('Event: volumechange'));
+    player.addEventListener('ratechange', () => console.log('Event: ratechange'));
+    player.addEventListener('seeking', () => console.log('Event: seeking'));
+    player.addEventListener('seeked', () => console.log('Event: seeked'));
+    
+    // Initial status update after a short delay
+    setTimeout(updateStatus, 3000);
+  </script>
+</body>
+</html>
