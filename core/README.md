@@ -41,11 +41,12 @@ import "ultra-media";
 
 ## ✅ Suporte a formatos
 
-| Formato | Extensão | Engine Utilizada |
+| Formato | Extensão/URL | Engine Utilizada |
 | ------- | -------- | ---------------- |
 | HLS     | `.m3u8`  | hls.js           |
 | DASH    | `.mpd`   | dash.js          |
 | MP4     | `.mp4`   | video nativo     |
+| YouTube | `youtube.com` | YouTube IFrame API |
 
 ---
 

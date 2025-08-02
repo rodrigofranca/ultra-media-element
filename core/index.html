@@ -6,10 +6,14 @@
   <link rel="icon" type="image/svg+xml" href="/vite.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Ultra Media Element</title>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/hls-video-element@1.2/+esm"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/menu/+esm"></script>
   <script>
     const videos = [
+      'https://www.youtube.com/watch?v=4stxP44-5_E',
+      'https://cdn.bitmovin.com/content/assets/sintel/sintel.mpd',
+      'https://cdn.bitmovin.com/content/assets/sintel/hls/playlist.m3u8',
       'https://stream.mux.com/A3VXy02VoUinw01pwyomEO3bHnG4P32xzV7u1j1FSzjNg.m3u8',
       'https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8?ref=developerinsider.co',
       'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
@@ -27,6 +31,7 @@
     document.addEventListener('DOMContentLoaded', () => {
       const container = document.querySelector('.container');
       const videoElement = container.querySelector('ultra-media');
+      changeVideo(videos[0]);
     });
 
     const player = document.querySelector('ultra-media');
@@ -38,29 +43,15 @@
   <div class="container">
     <div class="video-player">
       <media-controller defaultsubtitles="pt">
-        <ultra-media
+        <!-- <hls-video
           slot="media"
-          src="https://cdn.bitmovin.com/content/assets/sintel/hls/playlist.m3u8"
           playsinline muted crossorigin
         >
-        <!-- <track
-            label="Português"
-            kind="captions"
-            srclang="pt"
-            src="/examples/subtitles/pt.vtt"
-          />
-          <track
-            label="English"
-            kind="captions"
-            srclang="en"
-            src="/examples/subtitles/en.vtt"
-          />
-          <track
-            label="Español"
-            kind="captions"
-            srclang="es"
-            src="/examples/subtitles/es.vtt"
-          /> -->
+        </hls-video> -->
+        <ultra-media
+          slot="media"
+          playsinline muted crossorigin
+        >
         </ultra-media>
         <media-captions-menu hidden anchor="auto"></media-captions-menu>
         <media-rendition-menu hidden anchor="auto"></media-rendition-menu>
@@ -80,11 +71,11 @@
       </media-controller>
     </div>
   </div>
-  <button onclick="changeVideo(videos[0])">HLS 1</button>
-  <button onclick="changeVideo(videos[1])">HLS 2</button>
-  <button onclick="changeVideo(videos[2])">DASH</button>
-  <button onclick="changeVideo(videos[3])">MP4</button>
-  <button onclick="changeVideo(videos[6])">MP3</button>
+  <button onclick="changeVideo(videos[0])">Youtube</button>
+  <button onclick="changeVideo(videos[1])">DASH</button>
+  <button onclick="changeVideo(videos[2])">HLS</button>
+  <!-- <button onclick="changeVideo(videos[3])">MP4</button>
+  <button onclick="changeVideo(videos[6])">MP3</button> -->
   <script type="module" src="/src/index.ts"></script>
 </body>
 

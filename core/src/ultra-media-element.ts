@@ -83,6 +83,7 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
     this.player = PlayerFactory.create({
       src: this.src,
       element: this.nativeEl,
+      container: this,
     });
 
     // Registra os eventos de tracks
