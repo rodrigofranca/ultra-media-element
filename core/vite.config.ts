@@ -7,7 +7,7 @@ import fs from 'fs';
 import pkg from './package.json';
 import dts from 'vite-plugin-dts';
 
-const packageName = 'ultra-media-element';
+const packageName = 'ultra-media';
 
 export default defineConfig(({ command, mode }) => {
   return  {

@@ -11,7 +11,7 @@ Web Component moderno para reprodução de vídeos em múltiplos formatos (HLS, 
 ```html
 <script
   type="module"
-  src="https://cdn.jsdelivr.net/npm/ultra-media@4/+esm"
+  src="https://cdn.jsdelivr.net/npm/@rodrigofranca/ultra-media/+esm"
 ></script>
 ```
 
@@ -28,13 +28,13 @@ Depois, use diretamente no HTML:
 ### NPM
 
 ```bash
-npm install ultra-media
+npm install @rodrigofranca/ultra-media
 ```
 
 Depois, no seu projeto:
 
 ```ts
-import "ultra-media";
+import "@rodrigofranca/ultra-media";
 ```
 
 ---
@@ -64,6 +64,24 @@ https://dev.fantascope.uol.com.br
 
 ---
 
+## 🔌 Uso com SvelteKit (SSR)
+
+Este Web Component usa APIs de browser (DOM, `customElements`, `ResizeObserver`) que não existem em Node.js. Para uso com SSR, importe dinamicamente em `onMount`:
+
+```svelte
+<script>
+  import { onMount } from 'svelte';
+
+  onMount(async () => {
+    await import('@rodrigofranca/ultra-media');
+  });
+</script>
+
+<ultra-media src="https://example.com/video.m3u8"></ultra-media>
+```
+
+---
+
 ## 🔧 Scripts disponíveis
 
 | Script            | Descrição                        |
@@ -81,7 +99,7 @@ https://dev.fantascope.uol.com.br
 ```json
 // .vscode/settings.json
 {
-  "html.customData": ["./node_modules/ultra-media/vscode.html-data.json"]
+  "html.customData": ["./node_modules/@rodrigofranca/ultra-media/vscode.html-data.json"]
 }
 ```
 
@@ -91,7 +109,7 @@ https://dev.fantascope.uol.com.br
 // tsconfig.json
 {
   "compilerOptions": {
-    "types": ["ultra-media"]
+    "types": ["@rodrigofranca/ultra-media"]
   }
 }
 ```
