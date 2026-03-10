@@ -22,6 +22,7 @@
     ]
   },
   "scripts": {
+    "prepublishOnly": "pnpm run build",
     "dev": "vite",
     "build": "vite build",
     "watch": "vite build --watch",
