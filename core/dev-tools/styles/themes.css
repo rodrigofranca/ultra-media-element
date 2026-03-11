@@ -1,0 +1,321 @@
+/* Theme System - Ultra Media Element Development Tools */
+
+/* Dark Theme (Default) */
+[data-theme="dark"],
+:root {
+  /* Already defined in main.css as default */
+}
+
+/* Light Theme */
+[data-theme="light"] {
+  /* Color Palette */
+  --primary-color: #e91e63;
+  --primary-hover: #d81557;
+  --primary-light: #f48fb1;
+  --primary-dark: #ad1457;
+  
+  /* Background Colors */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --bg-tertiary: #e0e0e0;
+  --bg-quaternary: #cccccc;
+  
+  /* Text Colors */
+  --text-primary: #212121;
+  --text-secondary: #424242;
+  --text-muted: #757575;
+  --text-inverse: #ffffff;
+  
+  /* Border Colors */
+  --border-primary: #e0e0e0;
+  --border-secondary: #bdbdbd;
+  --border-accent: var(--primary-color);
+  
+  /* Status Colors */
+  --success-color: #4caf50;
+  --warning-color: #ff9800;
+  --error-color: #f44336;
+  --info-color: #2196f3;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* High Contrast Theme */
+[data-theme="high-contrast"] {
+  /* Color Palette */
+  --primary-color: #ff00ff;
+  --primary-hover: #e600e6;
+  --primary-light: #ff66ff;
+  --primary-dark: #cc00cc;
+  
+  /* Background Colors */
+  --bg-primary: #000000;
+  --bg-secondary: #111111;
+  --bg-tertiary: #222222;
+  --bg-quaternary: #333333;
+  
+  /* Text Colors */
+  --text-primary: #ffffff;
+  --text-secondary: #ffffff;
+  --text-muted: #cccccc;
+  --text-inverse: #000000;
+  
+  /* Border Colors */
+  --border-primary: #ffffff;
+  --border-secondary: #ffffff;
+  --border-accent: var(--primary-color);
+  
+  /* Status Colors */
+  --success-color: #00ff00;
+  --warning-color: #ffff00;
+  --error-color: #ff0000;
+  --info-color: #00ffff;
+}
+
+/* Blue Theme */
+[data-theme="blue"] {
+  /* Color Palette */
+  --primary-color: #2196f3;
+  --primary-hover: #1976d2;
+  --primary-light: #64b5f6;
+  --primary-dark: #1565c0;
+  
+  /* Background Colors */
+  --bg-primary: #0d1421;
+  --bg-secondary: #1a237e;
+  --bg-tertiary: #283593;
+  --bg-quaternary: #3949ab;
+  
+  /* Text Colors remain the same */
+  
+  /* Border Colors */
+  --border-primary: #3f51b5;
+  --border-secondary: #5c6bc0;
+  --border-accent: var(--primary-color);
+}
+
+/* Green Theme */
+[data-theme="green"] {
+  /* Color Palette */
+  --primary-color: #4caf50;
+  --primary-hover: #388e3c;
+  --primary-light: #81c784;
+  --primary-dark: #2e7d32;
+  
+  /* Background Colors */
+  --bg-primary: #0d1b0f;
+  --bg-secondary: #1b5e20;
+  --bg-tertiary: #2e7d32;
+  --bg-quaternary: #388e3c;
+  
+  /* Border Colors */
+  --border-primary: #4caf50;
+  --border-secondary: #66bb6a;
+  --border-accent: var(--primary-color);
+}
+
+/* Purple Theme */
+[data-theme="purple"] {
+  /* Color Palette */
+  --primary-color: #9c27b0;
+  --primary-hover: #7b1fa2;
+  --primary-light: #ba68c8;
+  --primary-dark: #6a1b9a;
+  
+  /* Background Colors */
+  --bg-primary: #1a0d1f;
+  --bg-secondary: #4a148c;
+  --bg-tertiary: #6a1b9a;
+  --bg-quaternary: #7b1fa2;
+  
+  /* Border Colors */
+  --border-primary: #9c27b0;
+  --border-secondary: #ab47bc;
+  --border-accent: var(--primary-color);
+}
+
+/* Orange Theme */
+[data-theme="orange"] {
+  /* Color Palette */
+  --primary-color: #ff9800;
+  --primary-hover: #f57c00;
+  --primary-light: #ffb74d;
+  --primary-dark: #ef6c00;
+  
+  /* Background Colors */
+  --bg-primary: #1f1406;
+  --bg-secondary: #e65100;
+  --bg-tertiary: #f57c00;
+  --bg-quaternary: #ff9800;
+  
+  /* Border Colors */
+  --border-primary: #ff9800;
+  --border-secondary: #ffb74d;
+  --border-accent: var(--primary-color);
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+  position: fixed;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
+  z-index: var(--z-tooltip);
+  padding: var(--spacing-sm);
+  border-radius: 50%;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-toggle:hover {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+  transform: scale(1.1);
+}
+
+/* Theme Dropdown */
+.theme-dropdown {
+  position: fixed;
+  top: 60px;
+  right: var(--spacing-md);
+  z-index: var(--z-dropdown);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  min-width: 150px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: all var(--transition-normal);
+}
+
+.theme-dropdown.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+
+.theme-option:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.theme-option.active {
+  background-color: var(--primary-color);
+  color: var(--text-primary);
+}
+
+.theme-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--border-primary);
+}
+
+.theme-color.pink { background-color: #e91e63; }
+.theme-color.blue { background-color: #2196f3; }
+.theme-color.green { background-color: #4caf50; }
+.theme-color.purple { background-color: #9c27b0; }
+.theme-color.orange { background-color: #ff9800; }
+.theme-color.dark { background-color: #424242; }
+.theme-color.light { background-color: #f5f5f5; }
+.theme-color.contrast { background-color: #ff00ff; }
+
+/* Transition Classes for Theme Changes */
+.theme-transition {
+  transition: 
+    background-color var(--transition-slow),
+    color var(--transition-slow),
+    border-color var(--transition-slow);
+}
+
+/* Theme-specific Media Chrome Customizations */
+[data-theme="light"] media-controller {
+  --media-primary-color: #212121;
+  --media-secondary-color: var(--primary-color);
+  --media-background-color: rgba(255, 255, 255, 0.9);
+  --media-control-background: var(--media-background-color);
+  --media-control-hover-background: rgba(255, 255, 255, 0.95);
+}
+
+[data-theme="high-contrast"] media-controller {
+  --media-primary-color: #ffffff;
+  --media-secondary-color: #ff00ff;
+  --media-background-color: rgba(0, 0, 0, 0.9);
+  --media-control-background: var(--media-background-color);
+  --media-control-hover-background: rgba(0, 0, 0, 0.95);
+}
+
+[data-theme="blue"] media-controller {
+  --media-secondary-color: #2196f3;
+}
+
+[data-theme="green"] media-controller {
+  --media-secondary-color: #4caf50;
+}
+
+[data-theme="purple"] media-controller {
+  --media-secondary-color: #9c27b0;
+}
+
+[data-theme="orange"] media-controller {
+  --media-secondary-color: #ff9800;
+}
+
+/* Dark mode preference detection */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    /* Apply light theme if no theme is set and user prefers light */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f5f5f5;
+    --bg-tertiary: #e0e0e0;
+    --bg-quaternary: #cccccc;
+    --text-primary: #212121;
+    --text-secondary: #424242;
+    --text-muted: #757575;
+    --border-primary: #e0e0e0;
+    --border-secondary: #bdbdbd;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.18);
+  }
+}
+
+/* Print styles */
+@media print {
+  .theme-toggle,
+  .theme-dropdown {
+    display: none;
+  }
+  
+  * {
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+  }
+}

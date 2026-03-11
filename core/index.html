@@ -5,145 +5,248 @@
   <meta charset="UTF-8" />
   <link rel="icon" type="image/svg+xml" href="/vite.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ultra Media Element</title>
+  <title>Ultra Media Element - Development Tools</title>
+
+  <!-- External Dependencies -->
   <script type="module" src="https://cdn.jsdelivr.net/npm/hls-video-element@1.2/+esm"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/menu/+esm"></script>
-  <script>
-    const videos = [
-      'https://www.youtube.com/watch?v=4stxP44-5_E',
-      'https://cdn.bitmovin.com/content/assets/sintel/sintel.mpd',
-      'https://cdn.bitmovin.com/content/assets/sintel/hls/playlist.m3u8',
-      'https://stream.mux.com/A3VXy02VoUinw01pwyomEO3bHnG4P32xzV7u1j1FSzjNg.m3u8',
-      'https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8?ref=developerinsider.co',
-      'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
-      'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
-      'https://livesim.dashif.org/livesim/chunkdur_1/ato_7/testpic4_8s/Manifest.mpd',
-      'https://download.samplelib.com/mp4/sample-10s.mp4',
-      'https://download.samplelib.com/mp3/sample-15s.mp3'
-    ]
 
-    function changeVideo(video) {
-      const videoElement = document.querySelector('ultra-media');
-      videoElement.src = video;
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-      const container = document.querySelector('.container');
-      const videoElement = container.querySelector('ultra-media');
-      changeVideo(videos[0]);
-    });
-
-    const player = document.querySelector('ultra-media');
-  </script>
+  <!-- Development Styles -->
+  <link rel="stylesheet" href="./dev-tools/styles/main.css">
+  <link rel="stylesheet" href="./dev-tools/styles/components.css">
+  <link rel="stylesheet" href="./dev-tools/styles/themes.css">
+  <link rel="stylesheet" href="./dev-tools/styles/responsive.css">
 </head>
 
 
 <body>
-  <div class="container">
-    <div class="video-player">
-      <media-controller defaultsubtitles="pt">
-        <!-- <hls-video
-          slot="media"
-          playsinline muted crossorigin
-        >
-        </hls-video> -->
-        <ultra-media
-          slot="media"
-          playsinline muted crossorigin
-        >
-        </ultra-media>
-        <media-captions-menu hidden anchor="auto"></media-captions-menu>
-        <media-rendition-menu hidden anchor="auto"></media-rendition-menu>
-        <media-audio-track-menu hidden anchor="auto"></media-audio-track-menu>
-        <media-control-bar class="bottom-bar">
-          <media-play-button></media-play-button>
-          <media-seek-backward-button seekoffset="15"></media-seek-backward-button>
-          <media-seek-forward-button seekoffset="15"></media-seek-forward-button>
-          <media-mute-button></media-mute-button>
-          <media-time-range></media-time-range>
-          <media-time-display showduration="" remaining=""></media-time-display>
-          <media-captions-menu-button></media-captions-menu-button>
-          <media-audio-track-menu-button></media-audio-track-menu-button>
-          <media-rendition-menu-button></media-rendition-menu-button>
-          <media-fullscreen-button></media-fullscreen-button>
-        </media-control-bar>
-      </media-controller>
+  <div class="dev-page">
+    <!-- Header -->
+    <header class="dev-header">
+      <div class="header-content">
+        <h1 class="dev-title">
+          <span class="title-main">Ultra Media Element</span>
+          <span class="title-sub">Development Tools</span>
+        </h1>
+        <nav class="dev-nav">
+          <button class="nav-btn active" data-tab="media-library">
+            <span class="nav-icon">📚</span>
+            Media Library
+          </button>
+          <button class="nav-btn" data-tab="config">
+            <span class="nav-icon">⚙️</span>
+            Configuration
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="dev-sidebar">
+      <div class="sidebar-content">
+        <!-- Media Library Tab -->
+        <div class="tab-panel active" id="media-library-panel">
+          <div class="panel-header">
+            <h3>Media Library</h3>
+          </div>
+
+          <!-- Format Tabs -->
+          <div class="format-tabs">
+            <button class="format-tab" data-format="hls">
+              <span class="tab-icon">🎬</span>
+              HLS
+            </button>
+            <button class="format-tab" data-format="dash">
+              <span class="tab-icon">📺</span>
+              DASH
+            </button>
+            <button class="format-tab" data-format="mp4">
+              <span class="tab-icon">🎥</span>
+              MP4
+            </button>
+            <button class="format-tab" data-format="mp3">
+              <span class="tab-icon">🎵</span>
+              MP3
+            </button>
+            <button class="format-tab" data-format="youtube">
+              <span class="tab-icon">📹</span>
+              YouTube
+            </button>
+          </div>
+
+          <div class="media-samples" id="media-samples">
+            <!-- Samples will be populated by JavaScript -->
+          </div>
+        </div>
+
+
+        <!-- Configuration Tab -->
+        <div class="tab-panel" id="config-panel">
+          <div class="panel-header">
+            <h3>Configuration</h3>
+          </div>
+          <div class="config-sections">
+            <div class="config-section">
+              <h4>Player Settings</h4>
+              <div class="config-controls">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="autoplay-toggle" checked>
+                  <span class="checkmark"></span>
+                  Autoplay
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="muted-toggle" checked>
+                  <span class="checkmark"></span>
+                  Muted
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="controls-toggle" checked>
+                  <span class="checkmark"></span>
+                  Controls
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="playsinline-toggle" checked>
+                  <span class="checkmark"></span>
+                  Plays Inline
+                </label>
+              </div>
+            </div>
+            <div class="config-section">
+              <h4>Custom URL</h4>
+              <div class="url-input-section">
+                <input type="url" id="custom-url" placeholder="Enter media URL..." class="url-input">
+                <button class="btn-primary" id="load-custom-url">Load URL</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Player Area -->
+    <main class="player-area">
+      <!-- Quick Actions -->
+      <div class="quick-actions-bar">
+        <div class="quick-actions">
+          <button class="btn-action-small" id="play-pause-btn">
+            <span class="btn-icon">▶️</span>
+            Play/Pause
+          </button>
+          <button class="btn-action-small" id="reload-btn">
+            <span class="btn-icon">🔄</span>
+            Reload
+          </button>
+          <button class="btn-action-small" id="fullscreen-btn">
+            <span class="btn-icon">⛶</span>
+            Fullscreen
+          </button>
+        </div>
+      </div>
+
+      <div class="player-container">
+        <div class="player-wrapper">
+          <media-controller defaultsubtitles="pt" id="media-controller">
+            <ultra-media
+              slot="media"
+              playsinline muted crossorigin
+              id="ultra-media"
+            >
+            </ultra-media>
+            <media-captions-menu hidden anchor="auto"></media-captions-menu>
+            <media-rendition-menu hidden anchor="auto"></media-rendition-menu>
+            <media-audio-track-menu hidden anchor="auto"></media-audio-track-menu>
+            <media-control-bar class="bottom-bar">
+              <media-play-button></media-play-button>
+              <media-seek-backward-button seekoffset="15"></media-seek-backward-button>
+              <media-seek-forward-button seekoffset="15"></media-seek-forward-button>
+              <media-mute-button></media-mute-button>
+              <media-time-range></media-time-range>
+              <media-time-display showduration="" remaining=""></media-time-display>
+              <media-captions-menu-button></media-captions-menu-button>
+              <media-audio-track-menu-button></media-audio-track-menu-button>
+              <media-rendition-menu-button></media-rendition-menu-button>
+              <media-fullscreen-button></media-fullscreen-button>
+            </media-control-bar>
+          </media-controller>
+        </div>
+        <div class="player-status">
+          <div class="status-indicator" id="loading-indicator">
+            <span class="status-dot"></span>
+            <span class="status-text">Ready</span>
+          </div>
+          <div class="current-url" id="current-url">
+            No media loaded
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Right Panel (Configuration + Debugging + Performance) -->
+    <div class="controls-panel">
+      <!-- Performance & Debugging Section -->
+      <div class="debug-performance-section">
+        <div class="tool-section">
+          <h4>Performance</h4>
+          <div class="player-info" id="performance-metrics">
+            <div class="info-item" data-metric="loadTime">
+              <span class="info-label">Load Time:</span>
+              <span class="info-value">-</span>
+            </div>
+            <div class="info-item" data-metric="buffering">
+              <span class="info-label">Buffering:</span>
+              <span class="info-value">-</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-section">
+          <h4>Player State</h4>
+          <div class="player-info" id="player-info">
+            <div class="info-item">
+              <span class="info-label">Format:</span>
+              <span class="info-value" id="format-indicator">None</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Player:</span>
+              <span class="info-value" id="player-type">None</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">State:</span>
+              <span class="info-value" id="player-state">Idle</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-section">
+          <h4>Event Monitor</h4>
+          <div class="event-monitor" id="event-monitor">
+            <div class="event-controls">
+              <button class="btn-small" id="toggle-events">Enable</button>
+              <button class="btn-small" id="clear-events">Clear</button>
+              <button class="btn-small" id="export-events">Export</button>
+            </div>
+            <div class="event-list" id="event-list" style="display: none;">
+              <!-- Events will be populated by JavaScript -->
+            </div>
+            <div class="event-monitor-disabled" id="event-monitor-disabled">
+              Event monitoring is disabled. Click "Enable" to start tracking events.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Configuration Section -->
+      <div class="config-sections" id="config-sections" style="display: none;">
+        <!-- Content will be populated by JavaScript -->
+      </div>
     </div>
   </div>
-  <button onclick="changeVideo(videos[0])">Youtube</button>
-  <button onclick="changeVideo(videos[1])">DASH</button>
-  <button onclick="changeVideo(videos[2])">HLS</button>
-  <!-- <button onclick="changeVideo(videos[3])">MP4</button>
-  <button onclick="changeVideo(videos[6])">MP3</button> -->
+
+  <!-- Scripts -->
   <script type="module" src="/src/index.ts"></script>
+  <script type="module" src="./dev-tools/scripts/dev-tools.js"></script>
 </body>
 
 </html>
 
-<style>
-  *{
-    /* margin: 0; */
-    /* padding: 0; */
-    box-sizing: border-box;
-  }
-  .container {
-    width: 90vw;
-    aspect-ratio: 16 / 9;
-    margin: auto;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-    border-radius: 16px;
-    overflow: hidden;
-    background-color: rgb(44, 44, 44);
-    padding: 0;
-    gap: 0;
-  }
-  .container.active{
-    --padding: 2rem;
-    padding: var(--padding);
-    gap: calc(var(--padding) / 2);
-  }
-  media-controller, ultra-media, ultra-media-ad {
-    position: relative;
-    width: 100%;
-    border-radius: 12px;
-    overflow: hidden;
-    background-color: black;
-    aspect-ratio: 16 / 9;
-  }
-  media-controller {
-      --media-primary-color: #f5f5f5;
-      --media-secondary-color: #e91e63;
-      --media-background-color: rgba(20, 20, 20, 0.7);
-      --media-control-background: var(--media-background-color);
-      --media-control-hover-background: var(--media-background-color);
-
-    }
-  .video-player{
-    width: 100%;
-  }
-  .ad-player {
-    width: 0%;
-  }
-  .active .video-player, .active .ad-player {
-    width: 50%;
-  }
-  .video-player, .ad-player{
-    height: 100%;
-    aspect-ratio: 16 / 9;
-    display: flex;
-    align-items: center;
-  }
-  .container, .video-player, .ad-player {
-    transition: all 0.3s ease-in-out;
-  }
-
-  ::cue {
-    background-color: rgba(0, 0, 0, 0.8);
-    color: white;
-    font-family: system-ui, -apple-system, sans-serif;
-  }
-</style>
