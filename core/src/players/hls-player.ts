@@ -1,4 +1,4 @@
-import type { IMediaPlayer, MediaTracks } from "../core/media-player";
+import type { IMediaPlayer, MediaTracks, MediaPlayerError } from "../core/media-player";
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
@@ -11,6 +11,7 @@ export class HlsPlayer implements IMediaPlayer {
   private sdkSrc: string = 'https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js';
   private config = {}
   private tracksChangeCallback?: (tracks: MediaTracks) => void;
+  private errorCallback?: (error: MediaPlayerError) => void;
 
   constructor(private element: HTMLVideoElement) {
     log("Powered by Hls.js");
@@ -26,6 +27,18 @@ export class HlsPlayer implements IMediaPlayer {
     }
     this.hls = new this.Hls(this.config);
     this.hls.attachMedia(this.nativeEl);
+
+    this.hls.on(this.Hls.Events.ERROR, (_event: any, data: any) => {
+      if (this.errorCallback) {
+        this.errorCallback({
+          type: data.type,
+          details: data.details,
+          fatal: data.fatal,
+          statusCode: data.response?.code,
+          url: data.url,
+        });
+      }
+    });
 
     this.hls.on(this.Hls.Events.MANIFEST_PARSED, (event: any, data: any) => {
       if (this.tracksChangeCallback) {
@@ -53,6 +66,10 @@ export class HlsPlayer implements IMediaPlayer {
 
   onTracksChange(callback: (tracks: MediaTracks) => void) {
     this.tracksChangeCallback = callback;
+  }
+
+  onError(callback: (error: MediaPlayerError) => void) {
+    this.errorCallback = callback;
   }
 
   switchAudioTrack(trackId: string) {

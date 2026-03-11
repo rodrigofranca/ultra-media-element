@@ -14,3 +14,4 @@ registerCustomElements('ultra-media', UltraMediaElement);
 registerCustomElements('ultra-media-ad', UltraMediaAd);
 
 export type { UltraMediaElement };
+export type { MediaPlayerError } from './core/media-player';

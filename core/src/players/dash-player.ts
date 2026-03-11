@@ -1,4 +1,4 @@
-import type { IMediaPlayer, MediaTracks } from "../core/media-player";
+import type { IMediaPlayer, MediaTracks, MediaPlayerError } from "../core/media-player";
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
@@ -20,6 +20,7 @@ export class DashPlayer implements IMediaPlayer {
     }
   };
   private tracksChangeCallback?: (tracks: MediaTracks) => void;
+  private errorCallback?: (error: MediaPlayerError) => void;
   private audioTracks: any[] = [];
   private videoTracks: any[] = [];
 
@@ -38,6 +39,19 @@ export class DashPlayer implements IMediaPlayer {
     this.player = this.dashjs.MediaPlayer().create();
     this.player.initialize(this.nativeEl, null, true);
     this.player.updateSettings(this.config);
+
+    this.player.on(this.dashjs.MediaPlayer.events.ERROR, (e: any) => {
+      if (this.errorCallback) {
+        this.errorCallback({
+          type: 'networkError',
+          details: e.error?.message || 'unknown',
+          fatal: true,
+          statusCode: e.error?.data?.request?.response?.status,
+          url: e.error?.data?.request?.url,
+          message: e.error?.message,
+        });
+      }
+    });
 
     this.player.on(this.dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
       if (this.tracksChangeCallback) {
@@ -70,6 +84,10 @@ export class DashPlayer implements IMediaPlayer {
 
   onTracksChange(callback: (tracks: MediaTracks) => void) {
     this.tracksChangeCallback = callback;
+  }
+
+  onError(callback: (error: MediaPlayerError) => void) {
+    this.errorCallback = callback;
   }
 
   switchAudioTrack(trackId: string) {

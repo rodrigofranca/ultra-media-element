@@ -20,11 +20,21 @@ export interface MediaTracks {
   renditions?: VideoRendition[];
 }
 
+export interface MediaPlayerError {
+  type: 'networkError' | 'mediaError' | 'otherError';
+  details: string;
+  fatal: boolean;
+  statusCode?: number;
+  url?: string;
+  message?: string;
+}
+
 export interface IMediaPlayer {
   onReady: Promise<void>;
   load(src: string): void;
   destroy(): void;
   onTracksChange?(callback: (tracks: MediaTracks) => void): void;
+  onError?(callback: (error: MediaPlayerError) => void): void;
   switchAudioTrack?(trackId: string): void;
   switchRendition?(renditionId: string): void;
 }

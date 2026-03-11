@@ -1,4 +1,4 @@
-import type { IMediaPlayer, MediaTracks } from './core/media-player';
+import type { IMediaPlayer, MediaTracks, MediaPlayerError } from './core/media-player';
 import { SuperVideoElement } from 'super-media-element';
 import { MediaTracksMixin } from 'media-tracks';
 import { getCurrentFormatFromElement, PlayerFactory } from './core/player-factory';
@@ -81,6 +81,14 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
     this.player = PlayerFactory.create({
       src: this.src,
       element: this.nativeEl,
+    });
+
+    this.player.onError?.((error: MediaPlayerError) => {
+      this.dispatchEvent(new CustomEvent('error', {
+        bubbles: true,
+        composed: true,
+        detail: error,
+      }));
     });
 
     // Registra os eventos de tracks
