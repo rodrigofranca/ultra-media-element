@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ultra Media Element - Plugins Demo</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    ultra-media {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #000;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Plugins Demo</h1>
+  <p>Open console to see Analytics Plugin logs.</p>
+
+  <ultra-media src="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8" controls></ultra-media>
+
+  <script type="module">
+    import { AnalyticsPlugin } from '../src/plugins/analytics-plugin';
+    // In a real app, you would import from the built bundle
+
+    const player = document.querySelector('ultra-media');
+
+    // Wait for custom element to upgrade
+    customElements.whenDefined('ultra-media').then(() => {
+      const analytics = new AnalyticsPlugin();
+      player.registerPlugin(analytics);
+      console.log('Analytics Plugin registered!');
+    });
+  </script>
+
+  <script type="module" src="../src/index.ts"></script>
+</body>
+
+</html>
