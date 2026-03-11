@@ -2,6 +2,7 @@ import type { IMediaPlayer, MediaTracks } from "../core/media-player";
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
+import { PluginManager } from "../core/plugin-system";
 
 export class DashPlayer implements IMediaPlayer {
   private nativeEl: HTMLVideoElement;
@@ -23,7 +24,7 @@ export class DashPlayer implements IMediaPlayer {
   private audioTracks: any[] = [];
   private videoTracks: any[] = [];
 
-  constructor(private element: HTMLVideoElement) {
+  constructor(private element: HTMLVideoElement, private pluginManager?: PluginManager) {
     log("Powered by Dash.js");
     this.nativeEl = element;
     this.onReady = new Promise((resolve, reject) => {
@@ -37,7 +38,18 @@ export class DashPlayer implements IMediaPlayer {
     }
     this.player = this.dashjs.MediaPlayer().create();
     this.player.initialize(this.nativeEl, null, true);
+
+    // Notify plugins about Dash config
+    if (this.pluginManager) {
+      this.pluginManager.notifyDashConfig(this.config);
+    }
+
     this.player.updateSettings(this.config);
+
+    // Notify plugins about Dash instance
+    if (this.pluginManager) {
+      this.pluginManager.notifyDashInstance(this.player);
+    }
 
     this.player.on(this.dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
       if (this.tracksChangeCallback) {

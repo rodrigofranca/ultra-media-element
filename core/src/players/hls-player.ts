@@ -2,6 +2,7 @@ import type { IMediaPlayer, MediaTracks } from "../core/media-player";
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
+import { PluginManager } from "../core/plugin-system";
 
 export class HlsPlayer implements IMediaPlayer {
   private nativeEl: HTMLVideoElement;
@@ -12,7 +13,7 @@ export class HlsPlayer implements IMediaPlayer {
   private config = {}
   private tracksChangeCallback?: (tracks: MediaTracks) => void;
 
-  constructor(private element: HTMLVideoElement) {
+  constructor(private element: HTMLVideoElement, private pluginManager?: PluginManager) {
     log("Powered by Hls.js");
     this.nativeEl = element;
     this.onReady = new Promise((resolve, reject) => {
@@ -24,7 +25,19 @@ export class HlsPlayer implements IMediaPlayer {
     if (isUndefined(this.Hls)) {
       this.Hls = await loadSDK(this.sdkSrc, 'Hls')
     }
+
+    // Notify plugins about HLS config
+    if (this.pluginManager) {
+      this.pluginManager.notifyHlsConfig(this.config);
+    }
+
     this.hls = new this.Hls(this.config);
+
+    // Notify plugins about HLS instance
+    if (this.pluginManager) {
+      this.pluginManager.notifyHlsInstance(this.hls);
+    }
+
     this.hls.attachMedia(this.nativeEl);
 
     this.hls.on(this.Hls.Events.MANIFEST_PARSED, (event: any, data: any) => {
@@ -78,7 +91,7 @@ export class HlsPlayer implements IMediaPlayer {
     }
   }
 
-  load(src: string){
+  load(src: string) {
     if (!this.Hls) return;
     if (this.Hls?.isSupported()) {
       this.hls.loadSource(src);
