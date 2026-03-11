@@ -6,12 +6,14 @@ import { VideoPlayer } from "../players/video-player";
 import { DashPlayer } from "../players/dash-player";
 import { AudioPlayer } from "../players/audio-player";
 import { YouTubePlayer } from "../players/youtube-player";
+import { PluginManager } from "./plugin-system";
 
 export type PlayerFactoryProps = {
   src: string;
   element: HTMLMediaElement;
   container?: HTMLElement;
   formats?: AvailableFormats;
+  pluginManager?: PluginManager;
 };
 
 const DEFAULT_FORMATS: AvailableFormats = {
@@ -22,12 +24,12 @@ const DEFAULT_FORMATS: AvailableFormats = {
   [Format.YOUTUBE]: "youtube",
 };
 
-const engines = new Map<string, (el: HTMLVideoElement, container?: HTMLElement) => IMediaPlayer>([
-  ["hls.js", (el) => new HlsPlayer(el)],
+const engines = new Map<string, (el: HTMLVideoElement, container?: HTMLElement, pluginManager?: PluginManager) => IMediaPlayer>([
+  ["hls.js", (el, _, pluginManager) => new HlsPlayer(el, pluginManager)],
   ["video/mp4", (el) => new VideoPlayer(el)],
-  ["dash.js", (el) => new DashPlayer(el)],
+  ["dash.js", (el, _, pluginManager) => new DashPlayer(el, pluginManager)],
   ["audio/mp3", (el) => new AudioPlayer(el)],
-  ["youtube", (el, container) => new YouTubePlayer(el, container)],
+  ["youtube", (el, container) => new YouTubePlayer(el, container as HTMLElement)],
 ]);
 
 export function getCurrentFormatFromElement(el: HTMLMediaElement): Format | undefined {
@@ -45,7 +47,7 @@ export function getCurrentFormatFromElement(el: HTMLMediaElement): Format | unde
 }
 
 export class PlayerFactory {
-  static create({ src, element, container, formats }: PlayerFactoryProps): IMediaPlayer {
+  static create({ src, element, container, formats, pluginManager }: PlayerFactoryProps): IMediaPlayer {
     const engineType = this.resolveEngine(src, formats ?? DEFAULT_FORMATS);
     const engine = engines.get(engineType);
 
@@ -54,7 +56,14 @@ export class PlayerFactory {
     }
 
     element.dataset.type = engineType;
-    const player = engine(element as HTMLVideoElement, container);
+    let playerContainer = container;
+    if (engineType === 'youtube' && !playerContainer) {
+      playerContainer = element.parentElement as HTMLElement;
+      if (!playerContainer) {
+        throw new Error('YouTube player requires a container element.');
+      }
+    }
+    const player = engine(element as HTMLVideoElement, playerContainer, pluginManager);
 
     player.onReady.then(() => player.load(src));
     return player;

@@ -4,6 +4,7 @@ import { MediaTracksMixin } from 'media-tracks';
 import { getCurrentFormatFromElement, PlayerFactory } from './core/player-factory';
 import { Format } from './core/format';
 import { detectFormat } from './core/format-detector';
+import { PluginManager, IPlugin } from './core/plugin-system';
 
 /**
  * Ultra Media Element supporting HLS, DASH, MP4 and MP3.
@@ -14,6 +15,7 @@ import { detectFormat } from './core/format-detector';
 export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
 
   private player: IMediaPlayer | null = null;
+  public pluginManager: PluginManager;
   static skipAttributes = ['src'];
   public isLive = false;
   public declare loadComplete?: Promise<void>;
@@ -21,7 +23,25 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
 
   constructor() {
     super();
+    this.pluginManager = new PluginManager(this);
     this.setupTrackListeners();
+  }
+
+  registerPlugin(plugin: IPlugin, config?: any) {
+    this.pluginManager.register(plugin, config);
+  }
+
+  set media(media: any) {
+    if (!media || !media.src) {
+      console.warn('[Ultra Media Element] Invalid media object');
+      return;
+    }
+
+    // Notify plugins about the media change (e.g. for DRM config)
+    this.pluginManager.notifyMediaChange(media);
+
+    // Trigger loading by setting the src attribute
+    this.src = media.src;
   }
 
   private setupTrackListeners() {
@@ -84,7 +104,10 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
       src: this.src,
       element: this.nativeEl,
       container: this,
+      pluginManager: this.pluginManager,
     });
+
+    this.pluginManager.updatePlayer(this.player);
 
     // Registra os eventos de tracks
     this.player.onTracksChange?.((tracks: MediaTracks) => {
@@ -148,5 +171,10 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
     }
 
     this.player = null;
+  }
+
+  disconnectedCallback() {
+    this.pluginManager.destroy();
+    super.disconnectedCallback?.();
   }
 }
