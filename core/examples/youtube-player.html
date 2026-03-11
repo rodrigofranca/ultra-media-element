@@ -9,7 +9,7 @@
     body {
       font-family: sans-serif;
     }
-    ultra-media {
+    media-controller {
       display: block;
       width: 640px;
       height: 360px;
@@ -21,19 +21,17 @@
 
   <h1>YouTube Player Example</h1>
 
-  <ultra-media src="https://www.youtube.com/watch?v=M7lc1qf-MkE" controls autoplay muted></ultra-media>
-
-  <button id="playBtn">Play</button>
-  <button id="pauseBtn">Pause</button>
-
-  <script>
-    const player = document.querySelector('ultra-media');
-    const playBtn = document.getElementById('playBtn');
-    const pauseBtn = document.getElementById('pauseBtn');
-
-    playBtn.onclick = () => player.play();
-    pauseBtn.onclick = () => player.pause();
-  </script>
+  <media-controller>
+    <ultra-media src="https://www.youtube.com/watch?v=e-1pVKUWlOQ" slot="media" autoplay muted crossorigin></ultra-media>
+    <media-control-bar>
+      <media-play-button></media-play-button>
+      <media-time-range></media-time-range>
+      <media-time-display></media-time-display>
+      <media-mute-button></media-mute-button>
+      <media-volume-range></media-volume-range>
+      <media-fullscreen-button></media-fullscreen-button>
+    </media-control-bar>
+  </media-controller>
 
 </body>
 </html>

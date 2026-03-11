@@ -5,7 +5,7 @@ declare global {
       Player: new (
         element: HTMLElement,
         options: {
-          videoId: string;
+          videoId?: string;
           playerVars?: {
             autoplay?: number;
             controls?: number;
@@ -16,13 +16,18 @@ declare global {
           events?: {
             onReady?: () => void;
             onStateChange?: (event: { data: number }) => void;
+            onPlaybackRateChange?: (event: { data: number }) => void;
+            onError?: (event: { data: number }) => void;
           };
         }
       ) => YTPlayer;
       PlayerState: {
+        UNSTARTED: number;
+        ENDED: number;
         PLAYING: number;
         PAUSED: number;
-        ENDED: number;
+        BUFFERING: number;
+        CUED: number;
       };
     };
     onYouTubeIframeAPIReady: () => void;
