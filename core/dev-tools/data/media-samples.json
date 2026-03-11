@@ -1,0 +1,495 @@
+{
+  "hls": {
+    "vod": [
+      {
+        "id": "hls-apple-basic",
+        "name": "Apple Basic HLS",
+        "url": "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8",
+        "format": "hls",
+        "type": "vod",
+        "features": ["multi-audio", "subtitles", "multi-rendition"],
+        "metadata": {
+          "duration": 1800,
+          "resolution": "1920x1080",
+          "bitrate": 5000000,
+          "codec": "h264",
+          "languages": ["en", "es"]
+        },
+        "description": "Apple's reference HLS stream with multiple audio tracks and subtitles",
+        "tags": ["apple", "reference", "multi-track", "fmp4"]
+      },
+      {
+        "id": "hls-apple-atmos",
+        "name": "Apple Dolby Vision + Atmos",
+        "url": "https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8",
+        "format": "hls",
+        "type": "vod",
+        "features": ["dolby-vision", "dolby-atmos", "hdr", "high-res"],
+        "metadata": {
+          "duration": 120,
+          "resolution": "3840x2160",
+          "bitrate": 25000000,
+          "codec": "hevc",
+          "languages": ["en"]
+        },
+        "description": "Apple's HDR Dolby Vision with Dolby Atmos audio stream",
+        "tags": ["apple", "4k", "hdr", "dolby", "premium"]
+      },
+      {
+        "id": "hls-mux-basic",
+        "name": "Mux Test Stream",
+        "url": "https://stream.mux.com/A3VXy02VoUinw01pwyomEO3bHnG4P32xzV7u1j1FSzjNg.m3u8",
+        "format": "hls",
+        "type": "vod",
+        "features": ["adaptive", "fast-start"],
+        "metadata": {
+          "duration": 596,
+          "resolution": "1920x1080",
+          "bitrate": 4500000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "Mux adaptive streaming test content",
+        "tags": ["mux", "adaptive", "test"]
+      },
+      {
+        "id": "hls-unified-streaming",
+        "name": "Unified Streaming - Tears of Steel",
+        "url": "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
+        "format": "hls",
+        "type": "vod",
+        "features": ["multi-audio", "subtitles", "multi-rendition"],
+        "metadata": {
+          "duration": 734,
+          "resolution": "1920x1080",
+          "bitrate": 3500000,
+          "codec": "h264",
+          "languages": ["en", "nl", "fr"]
+        },
+        "description": "Tears of Steel with multiple audio and subtitle tracks",
+        "tags": ["unified-streaming", "multi-language", "movie"]
+      },
+      {
+        "id": "hls-bitmovin-sintel",
+        "name": "Bitmovin - Sintel",
+        "url": "https://bitmovin-a.akamaihd.net/content/sintel/hls/playlist.m3u8",
+        "format": "hls",
+        "type": "vod",
+        "features": ["multi-rendition", "progressive"],
+        "metadata": {
+          "duration": 888,
+          "resolution": "1920x1080",
+          "bitrate": 4000000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "Sintel movie from Bitmovin with multiple quality levels",
+        "tags": ["bitmovin", "movie", "sintel"]
+      }
+    ],
+    "live": [
+      {
+        "id": "hls-live-apple",
+        "name": "Apple Live Stream",
+        "url": "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8",
+        "format": "hls",
+        "type": "live",
+        "features": ["live", "adaptive"],
+        "metadata": {
+          "resolution": "1920x1080",
+          "bitrate": 2500000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "Apple's live streaming test content",
+        "tags": ["apple", "live", "test"]
+      },
+      {
+        "id": "hls-live-akamai",
+        "name": "Akamai Live Test",
+        "url": "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8",
+        "format": "hls",
+        "type": "live",
+        "features": ["live", "low-latency"],
+        "metadata": {
+          "resolution": "1280x720",
+          "bitrate": 2000000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "Akamai's low latency live stream",
+        "tags": ["akamai", "live", "low-latency"]
+      }
+    ]
+  },
+  "dash": {
+    "vod": [
+      {
+        "id": "dash-bitmovin-sintel",
+        "name": "Bitmovin - Sintel",
+        "url": "https://cdn.bitmovin.com/content/assets/sintel/sintel.mpd",
+        "format": "dash",
+        "type": "vod",
+        "features": ["multi-rendition", "adaptive"],
+        "metadata": {
+          "duration": 888,
+          "resolution": "1920x1080",
+          "bitrate": 4000000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "Sintel movie in DASH format from Bitmovin",
+        "tags": ["bitmovin", "movie", "sintel"]
+      },
+      {
+        "id": "dash-elephants-dream",
+        "name": "DASH-IF - Elephants Dream",
+        "url": "https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd",
+        "format": "dash",
+        "type": "vod",
+        "features": ["multi-rendition", "30fps"],
+        "metadata": {
+          "duration": 634,
+          "resolution": "1920x1080",
+          "bitrate": 4500000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "Big Buck Bunny 30fps DASH stream",
+        "tags": ["dash-if", "30fps", "reference"]
+      },
+      {
+        "id": "dash-envivio",
+        "name": "Envivio - Dash3",
+        "url": "https://dash.akamaized.net/envivio/EnvivioDash3/manifest.mpd",
+        "format": "dash",
+        "type": "vod",
+        "features": ["multi-rendition", "long-duration"],
+        "metadata": {
+          "duration": 1501,
+          "resolution": "1920x1080",
+          "bitrate": 3000000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "Envivio test content with multiple bitrates",
+        "tags": ["envivio", "test", "multi-bitrate"]
+      }
+    ],
+    "live": [
+      {
+        "id": "dash-live-dashif",
+        "name": "DASH-IF Live Simulator",
+        "url": "https://livesim.dashif.org/livesim/chunkdur_1/ato_7/testpic4_8s/Manifest.mpd",
+        "format": "dash",
+        "type": "live",
+        "features": ["live", "simulated"],
+        "metadata": {
+          "resolution": "1920x1080",
+          "bitrate": 2000000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "DASH-IF live stream simulator",
+        "tags": ["dash-if", "live", "simulator"]
+      },
+      {
+        "id": "dash-live-unified",
+        "name": "Unified Streaming Live",
+        "url": "https://demo.unified-streaming.com/k8s/live/stable/live.isml/.mpd",
+        "format": "dash",
+        "type": "live",
+        "features": ["live", "production"],
+        "metadata": {
+          "resolution": "1280x720",
+          "bitrate": 1500000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "Unified Streaming live DASH content",
+        "tags": ["unified-streaming", "live"]
+      }
+    ]
+  },
+  "mp4": {
+    "standard": [
+      {
+        "id": "mp4-sample-480p",
+        "name": "Sample Video 480p",
+        "url": "https://sample-videos.com/zip/10/mp4/480/mp4-sample-480p-2mb.mp4",
+        "format": "mp4",
+        "type": "vod",
+        "features": ["progressive", "small-file"],
+        "metadata": {
+          "duration": 30,
+          "resolution": "854x480",
+          "bitrate": 1000000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "480p MP4 sample for testing",
+        "tags": ["480p", "sample", "progressive"]
+      },
+      {
+        "id": "mp4-sample-720p",
+        "name": "Sample Video 720p",
+        "url": "https://sample-videos.com/zip/10/mp4/720/mp4-sample-720p-5mb.mp4",
+        "format": "mp4",
+        "type": "vod",
+        "features": ["progressive", "hd"],
+        "metadata": {
+          "duration": 30,
+          "resolution": "1280x720",
+          "bitrate": 2500000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "720p HD MP4 sample",
+        "tags": ["720p", "hd", "sample"]
+      },
+      {
+        "id": "mp4-sample-1080p",
+        "name": "Sample Video 1080p",
+        "url": "https://sample-videos.com/zip/10/mp4/1080/mp4-sample-1080p-10mb.mp4",
+        "format": "mp4",
+        "type": "vod",
+        "features": ["progressive", "full-hd"],
+        "metadata": {
+          "duration": 30,
+          "resolution": "1920x1080",
+          "bitrate": 5000000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "1080p Full HD MP4 sample",
+        "tags": ["1080p", "full-hd", "sample"]
+      },
+      {
+        "id": "mp4-samplelib-10s",
+        "name": "SampleLib 10s Video",
+        "url": "https://download.samplelib.com/mp4/sample-10s.mp4",
+        "format": "mp4",
+        "type": "vod",
+        "features": ["progressive", "short"],
+        "metadata": {
+          "duration": 10,
+          "resolution": "1280x720",
+          "bitrate": 1500000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "10 second MP4 test video",
+        "tags": ["short", "test", "samplelib"]
+      },
+      {
+        "id": "mp4-commonsware",
+        "name": "CommonsWare Test Video",
+        "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        "format": "mp4",
+        "type": "vod",
+        "features": ["progressive", "long-duration"],
+        "metadata": {
+          "duration": 596,
+          "resolution": "1920x1080",
+          "bitrate": 3000000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "Big Buck Bunny full length video",
+        "tags": ["big-buck-bunny", "long", "google-storage"]
+      }
+    ],
+    "high-quality": [
+      {
+        "id": "mp4-4k-sample",
+        "name": "4K Test Video",
+        "url": "https://sample-videos.com/zip/10/mp4/3840x2160/mp4-sample-4k.mp4",
+        "format": "mp4",
+        "type": "vod",
+        "features": ["progressive", "4k", "high-bitrate"],
+        "metadata": {
+          "duration": 30,
+          "resolution": "3840x2160",
+          "bitrate": 15000000,
+          "codec": "h264",
+          "languages": ["en"]
+        },
+        "description": "4K Ultra HD MP4 sample",
+        "tags": ["4k", "uhd", "high-quality"]
+      }
+    ]
+  },
+  "mp3": {
+    "standard": [
+      {
+        "id": "mp3-sample-128k",
+        "name": "Sample Audio 128kbps",
+        "url": "https://sample-videos.com/zip/10/mp3/mp3SampleAudio.mp3",
+        "format": "mp3",
+        "type": "audio",
+        "features": ["standard-quality", "small-file"],
+        "metadata": {
+          "duration": 27,
+          "bitrate": 128000,
+          "codec": "mp3",
+          "languages": ["instrumental"]
+        },
+        "description": "128kbps MP3 audio sample",
+        "tags": ["128k", "sample", "music"]
+      },
+      {
+        "id": "mp3-samplelib-15s",
+        "name": "SampleLib 15s Audio",
+        "url": "https://download.samplelib.com/mp3/sample-15s.mp3",
+        "format": "mp3",
+        "type": "audio",
+        "features": ["short", "test"],
+        "metadata": {
+          "duration": 15,
+          "bitrate": 192000,
+          "codec": "mp3",
+          "languages": ["instrumental"]
+        },
+        "description": "15 second MP3 test audio",
+        "tags": ["short", "test", "samplelib"]
+      },
+      {
+        "id": "mp3-file-examples",
+        "name": "File Examples MP3",
+        "url": "https://file-examples.com/storage/fe68c8fa45d3e448e6c2e26/2017/11/file_example_MP3_700KB.mp3",
+        "format": "mp3",
+        "type": "audio",
+        "features": ["medium-duration", "voice"],
+        "metadata": {
+          "duration": 27,
+          "bitrate": 320000,
+          "codec": "mp3",
+          "languages": ["en"]
+        },
+        "description": "MP3 with voice content",
+        "tags": ["voice", "speech", "file-examples"]
+      }
+    ],
+    "high-quality": [
+      {
+        "id": "mp3-320k-sample",
+        "name": "High Quality 320kbps",
+        "url": "https://sample-videos.com/zip/10/mp3/mp3HighQualitySample.mp3",
+        "format": "mp3",
+        "type": "audio",
+        "features": ["high-quality", "320k"],
+        "metadata": {
+          "duration": 30,
+          "bitrate": 320000,
+          "codec": "mp3",
+          "languages": ["instrumental"]
+        },
+        "description": "320kbps high quality MP3",
+        "tags": ["320k", "high-quality", "music"]
+      }
+    ]
+  },
+  "youtube": {
+    "short": [
+      {
+        "id": "youtube-big-buck-bunny",
+        "name": "Big Buck Bunny",
+        "url": "https://www.youtube.com/watch?v=YE7VzlLtp-4",
+        "format": "youtube",
+        "type": "vod",
+        "features": ["creative-commons", "animation"],
+        "metadata": {
+          "duration": 596,
+          "resolution": "1920x1080",
+          "codec": "vp9",
+          "languages": ["en"]
+        },
+        "description": "Big Buck Bunny open source animation",
+        "tags": ["big-buck-bunny", "animation", "open-source"]
+      },
+      {
+        "id": "youtube-elephants-dream",
+        "name": "Elephants Dream",
+        "url": "https://www.youtube.com/watch?v=TLkA0RELQ1g",
+        "format": "youtube",
+        "type": "vod",
+        "features": ["creative-commons", "animation"],
+        "metadata": {
+          "duration": 654,
+          "resolution": "1920x1080",
+          "codec": "vp9",
+          "languages": ["en"]
+        },
+        "description": "Elephants Dream open movie project",
+        "tags": ["elephants-dream", "animation", "blender"]
+      },
+      {
+        "id": "youtube-sintel",
+        "name": "Sintel",
+        "url": "https://www.youtube.com/watch?v=eRsGyueVLvQ",
+        "format": "youtube",
+        "type": "vod",
+        "features": ["creative-commons", "animation", "subtitles"],
+        "metadata": {
+          "duration": 888,
+          "resolution": "1920x1080",
+          "codec": "vp9",
+          "languages": ["en", "es", "fr", "de"]
+        },
+        "description": "Sintel fantasy short film",
+        "tags": ["sintel", "animation", "fantasy"]
+      }
+    ],
+    "technical": [
+      {
+        "id": "youtube-test-pattern",
+        "name": "Test Pattern Video",
+        "url": "https://www.youtube.com/watch?v=4stxP44-5_E",
+        "format": "youtube",
+        "type": "vod",
+        "features": ["test-pattern", "technical"],
+        "metadata": {
+          "duration": 60,
+          "resolution": "1920x1080",
+          "codec": "vp9",
+          "languages": ["none"]
+        },
+        "description": "Technical test pattern for calibration",
+        "tags": ["test-pattern", "technical", "calibration"]
+      },
+      {
+        "id": "youtube-color-test",
+        "name": "Color Test Bars",
+        "url": "https://www.youtube.com/watch?v=ZXu7YUGWr80",
+        "format": "youtube",
+        "type": "vod",
+        "features": ["color-test", "technical"],
+        "metadata": {
+          "duration": 600,
+          "resolution": "1920x1080",
+          "codec": "vp9",
+          "languages": ["none"]
+        },
+        "description": "Color test bars for display calibration",
+        "tags": ["color-test", "calibration", "technical"]
+      }
+    ],
+    "live": [
+      {
+        "id": "youtube-live-nasa",
+        "name": "NASA Live Stream",
+        "url": "https://www.youtube.com/watch?v=21X5lGlDOfg",
+        "format": "youtube",
+        "type": "live",
+        "features": ["live", "space", "24x7"],
+        "metadata": {
+          "resolution": "1920x1080",
+          "codec": "vp9",
+          "languages": ["en"]
+        },
+        "description": "NASA's 24/7 live stream from space",
+        "tags": ["nasa", "space", "live", "24x7"]
+      }
+    ]
+  }
+}
