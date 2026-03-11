@@ -5,23 +5,166 @@
     {
       "kind": "javascript-module",
       "path": "src/index.ts",
+      "declarations": [],
+      "exports": [
+        {
+          "kind": "custom-element-definition",
+          "name": "tag",
+          "declaration": {
+            "name": "constructor",
+            "module": "src/index.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "UltraMediaElement",
+          "declaration": {
+            "name": "UltraMediaElement",
+            "module": "src/index.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/ultra-media-ad.ts",
       "declarations": [
         {
-          "kind": "variable",
-          "name": "customElement",
-          "type": {
-            "text": "string"
+          "kind": "class",
+          "description": "",
+          "name": "UltraMediaAd",
+          "members": [
+            {
+              "kind": "field",
+              "name": "videoElement",
+              "type": {
+                "text": "HTMLVideoElement | null"
+              },
+              "privacy": "private",
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "videoElementId",
+              "type": {
+                "text": "string"
+              },
+              "privacy": "private",
+              "default": "''"
+            },
+            {
+              "kind": "field",
+              "name": "adPlayer",
+              "type": {
+                "text": "any"
+              },
+              "privacy": "private",
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "muteOnly",
+              "type": {
+                "text": "boolean"
+              },
+              "privacy": "private",
+              "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "resizeObserver",
+              "type": {
+                "text": "ResizeObserver | null"
+              },
+              "privacy": "private",
+              "default": "null"
+            },
+            {
+              "kind": "method",
+              "name": "injectStyle",
+              "privacy": "private"
+            },
+            {
+              "kind": "method",
+              "name": "setupAd",
+              "parameters": [
+                {
+                  "name": "position",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "playAdOnce",
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": {
+                    "text": "Event"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "handleResize",
+              "privacy": "private",
+              "parameters": [
+                {
+                  "name": "entries",
+                  "type": {
+                    "text": "ResizeObserverEntry[]"
+                  }
+                }
+              ]
+            }
+          ],
+          "attributes": [
+            {
+              "name": "video"
+            },
+            {
+              "name": "model"
+            },
+            {
+              "name": "ad-tag-url"
+            },
+            {
+              "name": "position"
+            }
+          ],
+          "superclass": {
+            "name": "HTMLElement"
           },
-          "default": "'ultra-media'"
+          "customElement": true
+        },
+        {
+          "kind": "variable",
+          "name": "events",
+          "type": {
+            "text": "array"
+          },
+          "default": "[ 'ad_begin', 'ad_end', 'ad_non_linear', 'ad_play', 'ad_play_intent', 'ad_request', 'ad_request_intent', 'ad_stop', 'ad_stop_intent', 'ads_manager', 'ads_manager_loaded', 'ads_rendering_settings', 'error', 'first_quartile', 'midpoint', 'third_quartile', 'click', 'volume_changed', 'volume_muted', 'skipped', 'started', 'complete', 'all_ads_completed' ]"
         }
       ],
       "exports": [
         {
-          "kind": "custom-element-definition",
-          "name": "customElement",
+          "kind": "js",
+          "name": "UltraMediaAd",
           "declaration": {
-            "name": "UltraMediaElement",
-            "module": "/src/ultra-media-element"
+            "name": "UltraMediaAd",
+            "module": "src/ultra-media-ad.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "events",
+          "declaration": {
+            "name": "events",
+            "module": "src/ultra-media-ad.ts"
           }
         }
       ]
@@ -55,16 +198,42 @@
             },
             {
               "kind": "field",
-              "name": "test",
+              "name": "isLive",
               "type": {
-                "text": "string"
+                "text": "boolean"
               },
               "privacy": "public",
-              "default": "'test'"
+              "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "loadComplete",
+              "type": {
+                "text": "Promise<void> | undefined"
+              },
+              "privacy": "public"
+            },
+            {
+              "kind": "field",
+              "name": "isLoaded",
+              "type": {
+                "text": "boolean"
+              },
+              "privacy": "public"
+            },
+            {
+              "kind": "method",
+              "name": "setupTrackListeners",
+              "privacy": "private"
             },
             {
               "kind": "method",
               "name": "initializePlayer",
+              "privacy": "private"
+            },
+            {
+              "kind": "method",
+              "name": "removeAllMediaTracks",
               "privacy": "private"
             },
             {
@@ -96,11 +265,20 @@
           ],
           "attributes": [
             {
+              "name": "live"
+            },
+            {
               "type": {
                 "text": "string"
               },
               "description": "Source URL for the media",
               "name": "src"
+            }
+          ],
+          "mixins": [
+            {
+              "name": "MediaTracksMixin",
+              "package": "media-tracks"
             }
           ],
           "superclass": {
@@ -374,12 +552,74 @@
                 "text": "object"
               },
               "privacy": "private",
-              "default": "{ streaming: { abr: { autoSwitchBitrate: true } } }"
+              "default": "{ streaming: { abr: { autoSwitchBitrate: { audio: true, video: true } } } }"
+            },
+            {
+              "kind": "field",
+              "name": "tracksChangeCallback",
+              "type": {
+                "text": "(tracks: MediaTracks) => void | undefined"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "audioTracks",
+              "type": {
+                "text": "any[]"
+              },
+              "privacy": "private",
+              "default": "[]"
+            },
+            {
+              "kind": "field",
+              "name": "videoTracks",
+              "type": {
+                "text": "any[]"
+              },
+              "privacy": "private",
+              "default": "[]"
             },
             {
               "kind": "method",
               "name": "setup",
               "privacy": "private"
+            },
+            {
+              "kind": "method",
+              "name": "onTracksChange",
+              "parameters": [
+                {
+                  "name": "callback",
+                  "type": {
+                    "text": "(tracks: MediaTracks) => void"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "switchAudioTrack",
+              "parameters": [
+                {
+                  "name": "trackId",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "switchRendition",
+              "parameters": [
+                {
+                  "name": "renditionId",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
             },
             {
               "kind": "method",
@@ -473,9 +713,53 @@
               "default": "{}"
             },
             {
+              "kind": "field",
+              "name": "tracksChangeCallback",
+              "type": {
+                "text": "(tracks: MediaTracks) => void | undefined"
+              },
+              "privacy": "private"
+            },
+            {
               "kind": "method",
               "name": "setup",
               "privacy": "private"
+            },
+            {
+              "kind": "method",
+              "name": "onTracksChange",
+              "parameters": [
+                {
+                  "name": "callback",
+                  "type": {
+                    "text": "(tracks: MediaTracks) => void"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "switchAudioTrack",
+              "parameters": [
+                {
+                  "name": "trackId",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "switchRendition",
+              "parameters": [
+                {
+                  "name": "renditionId",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
             },
             {
               "kind": "method",

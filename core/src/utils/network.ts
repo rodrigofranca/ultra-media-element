@@ -14,9 +14,10 @@ export const loadSDK = <SDKType = unknown>(
 ): Promise<SDKType> => {
   const getGlobal = (key: keyof Window) => {
     if (!isUndefined(window[key])) return window[key];
-    if (window['exports'] && window['exports'][key]) return window['exports'][key];
-    if (window['module'] && window['module'].exports && window['module'].exports[key]) {
-      return window['module'].exports[key];
+    const w = window as any;
+    if (w['exports'] && w['exports'][key]) return w['exports'][key];
+    if (w['module'] && w['module'].exports && w['module'].exports[key]) {
+      return w['module'].exports[key];
     }
     return undefined;
   };
@@ -72,10 +73,10 @@ export const loadSDK = <SDKType = unknown>(
      * * O SingleSPA carrega o System.js e ele fica pendurado no window, a idéia é carregar o .js utilizando esse mesmo System.js.
      * * Para isso, checo se o System.js existe e uso o método System.import para o carregamento do .js necessário
      */
-    const System = window['System'];
+    const System = (window as any)['System'];
     if (System && System.hasOwnProperty('import')) {
       System.import(url)
-        .then((response) => onLoaded(response.default))
+        .then((response: any) => onLoaded(response.default))
         .catch(onError);
     } else {
       loadScriptFn(
@@ -102,14 +103,15 @@ export const loadScript = (
   firstScriptTag.parentNode?.insertBefore(script, firstScriptTag);
 };
 
-export function loadDependency(url, globalVariable = '', force = false) {
+export function loadDependency(url: string, globalVariable = '', force = false) {
   return new Promise((resolve, reject) => {
-    if (window[globalVariable] === undefined || force) {
+    const w = window as any;
+    if (w[globalVariable] === undefined || force) {
       loadScript(url, () => {
-        resolve(window[globalVariable]);
+        resolve(w[globalVariable]);
       }, reject)
     } else {
-      resolve(window[globalVariable]);
+      resolve(w[globalVariable]);
     }
   });
 }

@@ -26,8 +26,10 @@ export class UltraMediaAd extends HTMLElement {
   }
 
   connectedCallback() {
-    this.attachShadow({mode: 'open'});
-    this.injectStyle();
+    if (!this.shadowRoot) {
+      this.attachShadow({mode: 'open'});
+      this.injectStyle();
+    }
 
     this.muteOnly = this.hasAttribute('mute-only');
 
@@ -92,12 +94,6 @@ export class UltraMediaAd extends HTMLElement {
         }
       }
       this.classList.remove('visible'); // Inicialmente invisível
-
-      events.forEach((event) => {
-        player.on(event, () => {
-          console.log('Ad event:', event);
-        });
-      });
 
       player.on('ad_begin', () => {
         this.classList.add('visible');

@@ -5,7 +5,7 @@ export default {
   plugins: [
     generateCustomData({
       outdir: '.',
-      htmlFileName: 'vscode.html-custom-data.json',
+      htmlFileName: 'vscode.html-data.json',
       cssFileName: null,
     }),
   ],

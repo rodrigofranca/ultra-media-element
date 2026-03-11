@@ -139,7 +139,7 @@ export const generateUUID = () => {
 export const minMax = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(value, max));
 
-export function isEmpty(obj) {
+export function isEmpty(obj: Record<string, unknown>) {
   for (let key in obj) {
     if (obj.hasOwnProperty(key)) {
       return false;

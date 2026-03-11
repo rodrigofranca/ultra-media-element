@@ -72,8 +72,6 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
   async attributeChangedCallback(attrName: string, oldValue: string, newValue: string) {
     super.attributeChangedCallback?.(attrName, oldValue, newValue);
 
-    console.log(`UltraMediaElement: attributeChangedCallback called for ${attrName} from ${oldValue} to ${newValue}`);
-
     if (attrName === 'src' && oldValue !== newValue) {
       if (this.loadComplete && !this.isLoaded) {
         await this.loadComplete;
