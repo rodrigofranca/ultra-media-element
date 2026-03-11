@@ -1,5 +1,19 @@
 # CLAUDE.md
 
+# General Instructions
+
+## Planning Mode
+- Nunca crie codigos de implementação quando for registrar planos de ação, tarefas e detalhes técnicos
+
+## Code style
+- Use ES modules (import/export) syntax, not CommonJS (require)
+- Destructure imports when possible (eg. import { foo } from 'bar')
+
+## Workflow
+- Be sure to typecheck when you’re done making a series of code changes
+- Prefer running single tests, and not the whole test suite, for performance
+
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Structure
