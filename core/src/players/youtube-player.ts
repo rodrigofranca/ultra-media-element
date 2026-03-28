@@ -109,7 +109,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     // currentTime - read/write property
     Object.defineProperty(this.element, 'currentTime', {
       get: () => {
-        if (!this.player) return 0;
+        if (!this.player || typeof this.player.getCurrentTime !== 'function') return 0;
         return this.player.getCurrentTime() || 0;
       },
       set: (value: number) => {
@@ -125,8 +125,8 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     // duration - read-only property
     Object.defineProperty(this.element, 'duration', {
       get: () => {
-        if (!this.player) return NaN;
-        const duration = this.player?.getDuration();
+        if (!this.player || typeof this.player.getDuration !== 'function') return NaN;
+        const duration = this.player.getDuration();
         return duration > 0 ? duration : NaN;
       },
       configurable: true,
@@ -136,11 +136,11 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     // volume - read/write property (0.0 to 1.0)
     Object.defineProperty(this.element, 'volume', {
       get: () => {
-        if (!this.player) return 1.0;
+        if (!this.player || typeof this.player.getVolume !== 'function') return 1.0;
         return (this.player.getVolume() || 100) / 100;
       },
       set: (value: number) => {
-        if (this.player && typeof value === 'number' && value >= 0 && value <= 1) {
+        if (this.player && typeof this.player.setVolume === 'function' && typeof value === 'number' && value >= 0 && value <= 1) {
           this.player.setVolume(value * 100);
           this.element.dispatchEvent(new Event('volumechange'));
         }
@@ -152,11 +152,11 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     // muted - read/write property
     Object.defineProperty(this.element, 'muted', {
       get: () => {
-        if (!this.player) return false;
+        if (!this.player || typeof this.player.isMuted !== 'function') return false;
         return this.player.isMuted() || false;
       },
       set: (value: boolean) => {
-        if (this.player) {
+        if (this.player && typeof this.player.mute === 'function') {
           if (value) {
             this.player.mute();
           } else {
@@ -172,7 +172,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     // paused - read-only property
     Object.defineProperty(this.element, 'paused', {
       get: () => {
-        if (!this.player) return true;
+        if (!this.player || typeof this.player.getPlayerState !== 'function') return true;
         const state = this.player.getPlayerState();
         const YT = window[API_GLOBAL];
         return state !== YT.PlayerState.PLAYING;
@@ -193,11 +193,11 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     // playbackRate - read/write property
     Object.defineProperty(this.element, 'playbackRate', {
       get: () => {
-        if (!this.player) return 1.0;
+        if (!this.player || typeof this.player.getPlaybackRate !== 'function') return 1.0;
         return this.player.getPlaybackRate() || 1.0;
       },
       set: (value: number) => {
-        if (this.player && typeof value === 'number' && value > 0) {
+        if (this.player && typeof this.player.setPlaybackRate === 'function' && typeof value === 'number' && value > 0) {
           this.player.setPlaybackRate(value);
           this.element.dispatchEvent(new Event('ratechange'));
         }
@@ -209,7 +209,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     // ended - read-only property
     Object.defineProperty(this.element, 'ended', {
       get: () => {
-        if (!this.player) return false;
+        if (!this.player || typeof this.player.getPlayerState !== 'function') return false;
         const state = this.player.getPlayerState();
         const YT = window[API_GLOBAL];
         return state === YT.PlayerState.ENDED;
