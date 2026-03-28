@@ -1,128 +1,238 @@
 # CLAUDE.md
 
-# General Instructions
+## Overview
+**Ultra Media Element** is a drop-in `<video>`-compatible custom element that auto-detects and plays HLS, DASH, MP4, audio, and YouTube — with plugin support for DRM, ads, and analytics.
 
-## Planning Mode
-- Nunca crie codigos de implementação quando for registrar planos de ação, tarefas e detalhes técnicos
+## General Instructions
 
-## Code style
-- Use ES modules (import/export) syntax, not CommonJS (require)
-- Destructure imports when possible (eg. import { foo } from 'bar')
+### Planning Mode
+- When asked to plan, produce only markdown outlines — no TypeScript, no file edits, no code blocks
+- Plans go in `docs/plan/` as markdown files with date prefix (`MM-DD-YY-topic.md`)
 
-## Workflow
-- Be sure to typecheck when you’re done making a series of code changes
-- Prefer running single tests, and not the whole test suite, for performance
+### Language
+- Code, comments, variable names, commit messages: English
+- Logs e mensagens de warn/error visíveis ao dev: English (prefixado com `[Ultra Media Element]`)
 
+---
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 1. Architecture & Package Layout
 
-## Project Structure
+```
+ultra-media-element/
+└── core/                         ← all dev happens here (run commands from core/)
+    ├── src/
+    │   ├── index.ts              ← entry point: registers <ultra-media> and <ultra-media-ad>
+    │   ├── ultra-media-element.ts ← main custom element (extends SuperVideoElement + MediaTracksMixin)
+    │   ├── ultra-media-ad.ts     ← Google IMA ad component (Shadow DOM)
+    │   ├── core/
+    │   │   ├── format.ts         ← Format enum (HLS, DASH, MP4, AUDIO, YOUTUBE)
+    │   │   ├── format-detector.ts ← URL → Format detection (extension + domain matching)
+    │   │   ├── media-player.ts   ← IMediaPlayer interface + MediaTracks types
+    │   │   ├── player-factory.ts ← Factory: Format → engine → player instance
+    │   │   └── plugin-system.ts  ← PluginManager + IPlugin/IPluginContext interfaces
+    │   ├── players/              ← one file per format, each implements IMediaPlayer
+    │   │   ├── hls-player.ts     ← hls.js (loaded dynamically from CDN)
+    │   │   ├── dash-player.ts    ← dash.js (loaded dynamically from CDN)
+    │   │   ├── video-player.ts   ← native <video>
+    │   │   ├── audio-player.ts   ← native <audio>
+    │   │   └── youtube-player.ts ← YouTube IFrame API (proxy pattern over HTMLMediaElement)
+    │   ├── plugins/              ← IPlugin implementations
+    │   │   ├── drm-plugin.ts     ← Widevine + PlayReady DRM
+    │   │   └── analytics-plugin.ts ← event tracking prototype
+    │   └── utils/                ← internal helpers (NOT exported in dist)
+    ├── tests/                    ← Jest + jsdom test files
+    ├── dev-tools/                ← enhanced dev page (scripts, styles, media-samples.json)
+    ├── examples/                 ← 14 standalone HTML demos
+    ├── types/                    ← global.d.ts (Svelte/JSX) + youtube.d.ts
+    └── docs/                     ← evaluation, implementation plans, tasks.md
+```
 
-This is a Web Components library called Ultra Media Element that provides multi-format media playback (HLS, DASH, MP4, MP3, YouTube) with automatic format detection. The main development happens in the `core/` directory.
+**Dependency flow:** `UltraMediaElement → PlayerFactory → detectFormat() → Player(HLS|DASH|Video|Audio|YouTube)`
+**Plugin flow:** `UltraMediaElement.pluginManager → Player.notifyHls*/notifyDash* → IPlugin hooks`
 
-### Key Architecture Components
+### Base Classes (external — do NOT modify)
+- **`super-media-element`** → `SuperVideoElement`: provides the `<video>`-compatible custom element shell. Handles `nativeEl`, `loadComplete`, `isLoaded`, `attributeChangedCallback` delegation. Extend behavior via overrides in `UltraMediaElement`, never patch the dependency.
+- **`media-tracks`** → `MediaTracksMixin`: adds `audioTracks`, `videoTracks`, `videoRenditions` APIs. Use its `addAudioTrack()`, `addVideoTrack()`, `removeAudioTrack()` methods — never reimplement track management.
+- If you need behavior these base classes don't provide, extend in `UltraMediaElement` or create a new mixin. Never fork or monkey-patch the npm packages.
 
-- **UltraMediaElement**: Main custom element (`<ultra-media>`) extending SuperVideoElement with MediaTracksMixin
-- **PlayerFactory**: Creates appropriate player instances based on detected format using a plugin architecture
-- **Format Detection**: Automatic format detection from URLs using file extensions and domain patterns
-- **IMediaPlayer Interface**: Common interface for all player implementations (HLS, DASH, Video, Audio, YouTube)
-- **Media Tracks Integration**: Full audio tracks, video renditions, and subtitles support via media-tracks library
+### Shadow DOM Policy
+- **`<ultra-media>`** does **NOT** use Shadow DOM — it relies on `super-media-element`'s light DOM approach with a slotted `<video>` element
+- **`<ultra-media-ad>`** uses **Shadow DOM** (encapsulated ad overlay)
+- New components: default to **no Shadow DOM** unless encapsulation is explicitly needed (e.g., ad overlays, isolated UI). When in doubt, follow `<ultra-media>`'s pattern
 
-### Player Architecture
+---
 
-Each media format has its own player class implementing `IMediaPlayer`:
-- `HlsPlayer` - Uses hls.js for .m3u8 streams
-- `DashPlayer` - Uses dash.js for .mpd streams  
-- `VideoPlayer` - Native HTML5 video for .mp4/.webm/.ogg
-- `AudioPlayer` - Native HTML5 audio for .mp3/.wav/.ogg
-- `YouTubePlayer` - YouTube IFrame API for youtube.com URLs
+## 2. Development Commands
 
-Players are registered in `PlayerFactory` and selected automatically based on source URL format detection.
-
-## Development Commands
-
-**Working Directory**: All commands should be run from `core/` directory
+**All commands run from `core/` directory.**
 
 ```bash
 cd core
+pnpm install                        # install dependencies
+pnpm dev                            # dev server (HTTPS + HMR via mkcert)
+pnpm build                          # build ESM + UMD to dist/
+pnpm watch                          # build in watch mode
+pnpm test                           # run all Jest tests
+pnpm test -- format-detector.test.ts  # run single test file
+pnpm preview                        # preview built library
+pnpm analyze                        # generate Custom Elements Manifest
+pnpm serve:examples                 # serve examples/ with livereload
 ```
 
-### Essential Commands
-- `pnpm dev` - Start development server with HTTPS and HMR
-- `pnpm build` - Build library (ESM + UMD bundles to dist/)
-- `pnpm watch` - Build in watch mode
-- `pnpm test` - Run Jest tests
-- `pnpm preview` - Preview built library
+**TypeScript check (no script configured):**
+```bash
+npx tsc --noEmit                    # typecheck without emitting
+```
 
-### Testing
-- Tests are in `tests/` directory using Jest with jsdom environment
-- Test files follow pattern: `*.test.ts`
-- Run single test: `pnpm test -- format-detector.test.ts`
+---
 
-## Important Files and Locations
+## 3. Dev Workflow
 
-- Main entry: `src/index.ts` - Registers custom elements
-- Core element: `src/ultra-media-element.ts` - Main UltraMediaElement class
-- Player factory: `src/core/player-factory.ts` - Player creation and format mapping
-- Format detection: `src/core/format-detector.ts` - URL format detection logic
-- Players: `src/players/` - Individual player implementations
-- Types: `src/core/media-player.ts` - Core interfaces and types
-- Build config: `vite.config.ts` - Library build configuration
-- Tests: `tests/` - Jest test files
+1. Make changes in `core/src/`
+2. Typecheck: `npx tsc --noEmit`
+3. Run relevant test: `pnpm test -- <file>.test.ts` (prefer single test over full suite)
+4. Build: `pnpm build` (must pass — ESM + UMD + .d.ts)
+5. Verify in browser: `pnpm dev` and test with dev-tools page or examples/
 
-## Build Configuration
+When adding a new player or plugin, always verify with a real stream from `dev-tools/data/media-samples.json`.
 
-- Uses Vite for building with library mode
-- Generates both ESM and UMD bundles
-- TypeScript declarations generated to `dist/`
-- Custom Elements Manifest generated for IDE support
-- VSCode HTML custom data support via `vscode.html-custom-data.json`
+---
 
-## Key Dependencies
+## 4. Code Rules
 
-- `super-media-element` - Base class for custom media elements
-- `media-tracks` - Audio tracks, video renditions, and subtitles support
-- `hls.js` and `dash.js` - Streaming media support (loaded dynamically)
-- `ima-ad-player` - Google IMA ads integration
+### Design Patterns
+- Always favor established design patterns when implementing new features. This project already uses:
+  - **Factory** (`PlayerFactory`) — object creation based on runtime input
+  - **Strategy** (`IMediaPlayer` interface) — interchangeable player implementations
+  - **Observer** (plugin notification hooks, track change callbacks) — decoupled event communication
+  - **Proxy** (`YouTubePlayer`) — wrapping a foreign API behind a native interface
+  - **Mixin** (`MediaTracksMixin`) — composing behavior into the main element
+- When adding new functionality, identify which pattern fits before writing code. Prefer a known pattern over ad-hoc logic — it keeps the codebase predictable and extensible.
+- If no standard pattern applies, keep the solution simple and document the reasoning.
 
-## Project Documentation
+### Modules & Imports
+- ES modules only (`import/export`), never CommonJS (`require`)
+- Destructure imports: `import { Format } from './core/format'`
+- Type-only imports: `import type { IMediaPlayer } from './core/media-player'`
+- Internal utils are NOT exported in the public API (excluded in vite.config.ts dts)
 
-The `/docs` folder contains comprehensive project analysis and implementation plans:
+### Naming Conventions
+- **Files:** kebab-case (`hls-player.ts`, `format-detector.ts`)
+- **Classes:** PascalCase (`HlsPlayer`, `PlayerFactory`, `PluginManager`)
+- **Interfaces:** `I` prefix — project convention (`IMediaPlayer`, `IPlugin`, `IPluginContext`). Always use `I` prefix for interfaces to distinguish from types and classes.
+- **Types:** PascalCase without prefix (`MediaTracks`, `PlayerFactoryProps`, `AvailableFormats`)
+- **Enums:** PascalCase name, UPPER_CASE values (`Format.HLS`, `Format.DASH`)
+- **Functions:** camelCase (`detectFormat`, `loadSDK`, `isUndefined`)
+- **Private fields:** `private` keyword (no `_` prefix)
+- **Constants:** camelCase for maps/objects (`colors`, `engines`), UPPER_CASE for true constants (`DEFAULT_FORMATS`)
 
-- **`/docs/evaluation/`** - Detailed 6-part project analysis covering purpose, architecture, code quality, community potential, and evolution roadmap
-- **`/docs/implementation/`** - Technical implementation plans for features like YouTube embed support and iframe/events refactoring
-- **`/docs/tasks.md`** - Feature roadmap with implementation status
+### Player Pattern (IMediaPlayer)
+Every player must implement `IMediaPlayer`:
+```typescript
+interface IMediaPlayer {
+  onReady: Promise<void>;   // resolves when engine is loaded and ready
+  load(src: string): void;  // load/switch source
+  destroy(): void;          // cleanup engine instance, set to null
+  onTracksChange?(callback: (tracks: MediaTracks) => void): void;
+  switchAudioTrack?(trackId: string): void;
+  switchRendition?(renditionId: string): void;
+}
+```
+- Constructor receives `(element: HTMLVideoElement, pluginManager?: PluginManager)`
+- SDK loading is async in `setup()`, resolved via `onReady` promise
+- SDKs are loaded dynamically from CDN via `loadSDK()` — never bundled
+- `destroy()` must null out engine references (`this.hls = null`, `this.player = null`)
 
-## Development Notes
+### Plugin Pattern (IPlugin)
+- Plugins are registered via `element.registerPlugin(plugin, config?)`
+- Plugin hooks are optional — use `plugin.onHlsConfig?.()` pattern
+- Config precedence: `media.drm` (per-video) > global config (on register)
+- Plugins must not throw — wrap notification calls in try-catch (TODO: enforce this)
 
-- The project uses pnpm as package manager (pnpm-lock.yaml present)
-- All players implement the `IMediaPlayer` interface for consistency
-- Format detection happens automatically on src attribute changes
-- YouTube player creates iframe as sibling to video element, not replacing it
-- Media tracks are automatically synchronized between players and the element's track lists
-- Event simulation for YouTube player translates YouTube API events to standard HTMLMediaElement events
+### Logging
+- Use `log()` and `debug()` from `utils/log.ts` — never raw `console.log` in source
+- `console.warn` allowed for validation failures, prefixed with `[Ultra Media Element]`
+- `console.error` allowed for fatal errors only
+- `debug()` is gated by `?debug` query param
 
-## Current Feature Status
+### Custom Element Registration
+- Check `globalThis.customElements.get(tag)` before `define()` to avoid duplicate registration
+- Element tag names: `ultra-media`, `ultra-media-ad`
 
-**Completed Features:**
-- ✅ Multi audio track support
-- ✅ Video quality/renditions support  
-- ✅ Subtitles support via `<track>` elements
-- ✅ Advertisement component (ultra-media-ad)
-- ✅ YouTube embed support
+### Anti-Patterns
+- **Never bundle hls.js, dash.js, or YouTube API** — they are loaded on demand via `loadSDK()`
+- **Never import from `utils/` in public API exports** — utils are internal only
+- **Never use `any` without justification** — prefer explicit types or generics
+- **Never add event listeners without a cleanup path** in `destroy()` or `disconnectedCallback()`
+- **Never assume nativeEl exists** — always guard with `if (!this.nativeEl)` checks
+- **Never create new custom elements without the registration guard** in `index.ts`
 
-**Planned Features:**
-- ⏳ Library extension capabilities (Dash.js, HLS.js customization)
-- ⏳ Custom URL support for self-hosted libraries
-- ⏳ DRM support for protected content
-- ⏳ URL signature support
-- ⏳ Video sequence/playlist support
-- ⏳ Preload optimization using web workers
-- ⏳ XHR request override capabilities
+---
 
-## Known Architecture Considerations
+## 5. Commit Conventions
 
-- YouTube iframe positioning: Creates iframe as sibling to video element within UltraMediaElement container
-- Event mapping: YouTube API events are translated to standard media events (play, pause, timeupdate, ended)
-- Player factory uses format detection to automatically select appropriate player implementation
-- Media tracks integration provides standardized audio/video track switching across all player types
+Format: `<type>: <description in lowercase>`
+
+| Type | Usage |
+|------|-------|
+| `feat` | New feature or capability |
+| `fix` | Bug fix |
+| `chore` | Build, config, dependencies, cleanup |
+| `docs` | Documentation only |
+| `data` | Test data, media samples |
+| `refactor` | Code restructure without behavior change |
+| `test` | Adding or updating tests |
+
+No scopes currently enforced. Keep subject line under 72 chars.
+
+---
+
+## 6. Build Output
+
+`pnpm build` generates the following in `core/dist/`:
+
+```
+dist/
+├── ultra-media.es.js       ← ESM bundle (primary, used by "exports" and "module" in package.json)
+├── ultra-media.umd.js      ← UMD bundle (used by "main" in package.json)
+├── ultra-media.es.js.map   ← source maps
+├── ultra-media.umd.js.map
+├── index.d.ts              ← TypeScript declarations (public API only)
+└── core/                   ← declaration files for core/ types
+```
+
+**What gets published to npm** (defined in `package.json` `files` field):
+- `dist/` — built bundles + declarations
+- `types/` — `global.d.ts` (Svelte/JSX support) + `youtube.d.ts`
+- `vscode.html-data.json` — VSCode IntelliSense
+
+**Entry points:**
+- ESM: `dist/ultra-media.es.js` (via `exports["."].import` and `module`)
+- UMD: `dist/ultra-media.umd.js` (via `main`)
+- Types: `types/global.d.ts`
+
+**Critical:** `utils/` and `players/` are excluded from `.d.ts` generation (see `dts.exclude` in `vite.config.ts`). Never add them to the public API surface.
+
+---
+
+## 7. Testing Conventions
+
+- **Location:** `core/tests/`
+- **Naming:** `<module-name>.test.ts` (matches source file kebab-case)
+- **Framework:** Jest + ts-jest + jsdom environment
+- **Config:** `core/jest.config.cjs`
+- **Run single:** `pnpm test -- format-detector.test.ts`
+- **Run all:** `pnpm test`
+
+Test structure follows the pattern:
+```typescript
+import { describe, it, expect } from '@jest/globals';
+
+describe('ModuleName', () => {
+  it('should do specific thing', () => {
+    // arrange → act → assert
+  });
+});
+```
+
+Mock external SDKs (hls.js, dash.js, YouTube API) — never hit real CDNs in tests. Use `jest.fn()` for callbacks and event handlers.
