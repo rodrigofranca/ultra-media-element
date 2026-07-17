@@ -67,6 +67,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   private isLoaded = false;
   private lastCurrentTime = 0;
   private seeking = false;
+  private isDestroyed = false;
 
   // Backup of original HTMLMediaElement methods for restoration
   private originalMethods = {
@@ -271,35 +272,21 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
 
   // Cleanup the proxy system and restore original behavior
   cleanupProxy(): void {
-    // Restore original methods
-    if (this.originalMethods.play) {
-      this.element.play = this.originalMethods.play;
-    }
-    if (this.originalMethods.pause) {
-      this.element.pause = this.originalMethods.pause;
-    }
-    if (this.originalMethods.load) {
-      this.element.load = this.originalMethods.load;
-    }
+    // Remove own properties criadas pelo proxy — o prototype nativo é exposto automaticamente
+    delete (this.element as any).play;
+    delete (this.element as any).pause;
+    delete (this.element as any).load;
 
-    // Restore original property descriptors
-    this.originalDescriptors.forEach((descriptor, property) => {
+    // Remover own property descriptors — o prototype nativo é exposto automaticamente via cadeia
+    this.originalDescriptors.forEach((_descriptor, property) => {
       try {
-        // Delete the overridden property first
         delete (this.element as any)[property];
-
-        // If we have an original descriptor, restore it
-        if (descriptor.get || descriptor.set || descriptor.value !== undefined) {
-          Object.defineProperty(this.element, property, descriptor);
-        }
       } catch (e) {
-        // Some properties might not be configurable, ignore errors
         console.warn(`Could not restore property ${property}:`, e);
       }
     });
 
     this.originalDescriptors.clear();
-    console.log('YouTubePlayer: Proxy cleanup completed');
   }
 
   load(src: string): void {
@@ -307,6 +294,9 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     this.element.dispatchEvent(new Event('loadstart'));
 
     this.onReady.then(() => {
+      // Guard: se o player foi destruído externamente (ex: troca de formato), cancela
+      if (this.isDestroyed) return;
+
       const videoId = src.match(MATCH_SRC)?.[1];
       if (!videoId) {
         console.error('Invalid YouTube URL');
@@ -315,6 +305,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
 
       if (this.iframe) {
         this.destroy();
+        this.isDestroyed = false; // reset: destroy interno para recarga, não cancelamento
       }
 
       // Hide the original video element
@@ -339,6 +330,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
       }
 
       this.player = new window[API_GLOBAL].Player(this.iframe, {
+        videoId,
         playerVars: {
           autoplay: 1,
           loop: this.element.loop ? 1 : 0,
@@ -359,6 +351,8 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   }
 
   destroy(): void {
+    this.isDestroyed = true;
+
     // Cleanup proxy system first
     this.cleanupProxy();
 
@@ -387,6 +381,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   }
 
   private onPlayerReady(): void {
+    if (this.isDestroyed) return;
     this.isLoaded = true;
     this.element.dispatchEvent(new Event('loadedmetadata'));
     this.element.dispatchEvent(new Event('durationchange'));
@@ -405,6 +400,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   }
 
   private onPlayerStateChange(event: any): void {
+    if (this.isDestroyed) return;
     const state = event.data;
     const YT = window[API_GLOBAL];
 
@@ -439,10 +435,12 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   }
 
   private onPlaybackRateChange(event: any): void {
+    if (this.isDestroyed) return;
     this.element.dispatchEvent(new Event('ratechange'));
   }
 
   private onPlayerError(event: any): void {
+    if (this.isDestroyed) return;
     console.error('YouTubePlayer onPlayerError', event);
   }
 

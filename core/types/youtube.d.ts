@@ -16,6 +16,8 @@ declare global {
           events?: {
             onReady?: () => void;
             onStateChange?: (event: { data: number }) => void;
+            onPlaybackRateChange?: (event: { data: number }) => void;
+            onError?: (event: { data: number }) => void;
           };
         }
       ) => YTPlayer;
@@ -23,6 +25,7 @@ declare global {
         PLAYING: number;
         PAUSED: number;
         ENDED: number;
+        BUFFERING: number;
       };
     };
     onYouTubeIframeAPIReady: () => void;
