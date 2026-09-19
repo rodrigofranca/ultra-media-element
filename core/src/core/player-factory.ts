@@ -27,7 +27,12 @@ const engines = new Map<string, (el: HTMLVideoElement, container?: HTMLElement) 
   ["video/mp4", (el) => new VideoPlayer(el)],
   ["dash.js", (el) => new DashPlayer(el)],
   ["audio/mp3", (el) => new AudioPlayer(el)],
-  ["youtube", (el, container) => new YouTubePlayer(el, container)],
+  ["youtube", (el, container) => {
+    if (!container) {
+      throw new Error("YouTubePlayer requires a container element");
+    }
+    return new YouTubePlayer(el, container);
+  }],
 ]);
 
 export function getCurrentFormatFromElement(el: HTMLMediaElement): Format | undefined {

@@ -29,6 +29,7 @@
     "watch": "vite build --watch",
     "preview": "vite preview",
     "test": "jest",
+    "typecheck": "tsc --noEmit",
     "analyze": "cem analyze",
     "serve:examples": "wet serve --cors --livereload --redirect :examples/ --log-level error"
   },
