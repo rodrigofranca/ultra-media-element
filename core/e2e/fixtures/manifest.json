@@ -1,0 +1,26 @@
+{
+  "duration": 4,
+  "mp4": {
+    "width": 480,
+    "height": 270
+  },
+  "mp3": {},
+  "hls": {
+    "renditions": [
+      {
+        "width": 480,
+        "height": 270
+      },
+      {
+        "width": 320,
+        "height": 180
+      }
+    ],
+    "audioTracks": 1
+  },
+  "dash": {
+    "videoAdaptationSets": 1,
+    "videoRepresentationsInAdaptationSet": 2,
+    "audioTracks": 1
+  }
+}
