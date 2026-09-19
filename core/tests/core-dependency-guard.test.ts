@@ -1,6 +1,7 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, afterAll } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 
 /**
  * ADR-0001's dependency rule for the headless core: nothing under
@@ -31,7 +32,16 @@ const FORBIDDEN_API_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
   { name: 'private class field access (this.#foo)', pattern: /\bthis\.#[a-zA-Z_$]/ },
 ];
 
-const IMPORT_FROM_RE = /(?:import|export)\s[^;]*?\sfrom\s+['"]([^'"]+)['"]/g;
+// Three distinct, non-overlapping syntactic forms a module specifier can
+// appear in - `import X from '…'`/`export … from '…'` all require a
+// `from` clause; a bare side-effect `import '…'` never has one; a dynamic
+// `import('…')` is a call expression, not a declaration (cycle 2, defect 6
+// - the guard used to only recognize the first form).
+const IMPORT_SPECIFIER_PATTERNS: RegExp[] = [
+  /(?:import|export)\s[^;]*?\sfrom\s+['"]([^'"]+)['"]/g,
+  /import\s+['"]([^'"]+)['"]/g,
+  /\bimport\(\s*['"]([^'"]+)['"]/g,
+];
 
 // Strips comments before checking for forbidden API usage, so a doc
 // comment that merely *mentions* one of these APIs (as this file's own
@@ -71,23 +81,25 @@ function walkImportGraph(entry: string): WalkResult {
     files.add(file);
 
     const source = fs.readFileSync(file, 'utf8');
-    for (const match of source.matchAll(IMPORT_FROM_RE)) {
-      const specifier = match[1];
+    for (const pattern of IMPORT_SPECIFIER_PATTERNS) {
+      for (const match of source.matchAll(pattern)) {
+        const specifier = match[1];
 
-      if (FORBIDDEN_BARE_IMPORTS.some((forbidden) => specifier === forbidden || specifier.startsWith(`${forbidden}/`))) {
-        bareImportViolations.push({ file, specifier });
-        continue;
+        if (FORBIDDEN_BARE_IMPORTS.some((forbidden) => specifier === forbidden || specifier.startsWith(`${forbidden}/`))) {
+          bareImportViolations.push({ file, specifier });
+          continue;
+        }
+
+        const resolved = resolveLocalImport(file, specifier);
+        if (!resolved) continue; // other npm packages are fine to *reference* here; none are actually used besides the two forbidden ones checked above
+
+        if (FORBIDDEN_LOCAL_FILES.includes(path.basename(resolved))) {
+          localFileViolations.push({ file, imported: path.basename(resolved) });
+          continue;
+        }
+
+        queue.push(resolved);
       }
-
-      const resolved = resolveLocalImport(file, specifier);
-      if (!resolved) continue; // other npm packages are fine to *reference* here; none are actually used besides the two forbidden ones checked above
-
-      if (FORBIDDEN_LOCAL_FILES.includes(path.basename(resolved))) {
-        localFileViolations.push({ file, imported: path.basename(resolved) });
-        continue;
-      }
-
-      queue.push(resolved);
     }
   }
 
@@ -120,5 +132,36 @@ describe('UltraMediaCore dependency guard (ADR-0001)', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+});
+
+describe('UltraMediaCore dependency guard: catches every import form (cycle 2, defect 6)', () => {
+  // Real (temporary, self-cleaning) files under a scratch dir, walked
+  // through the actual `walkImportGraph`/regex this guard uses in
+  // production - not a copy - so this exercises the real detection logic,
+  // not just a description of it. Each violation is a bare import of a
+  // real forbidden package, written in a different syntactic form.
+  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-dependency-guard-test-'));
+  afterAll(() => fs.rmSync(scratchDir, { recursive: true, force: true }));
+
+  function writeEntry(name: string, content: string): string {
+    const entry = path.join(scratchDir, `${name}.ts`);
+    fs.writeFileSync(entry, content, 'utf8');
+    return entry;
+  }
+
+  it('catches a bare side-effect import: import \'…\'', () => {
+    const entry = writeEntry('side-effect', `import 'super-media-element';\n`);
+    expect(walkImportGraph(entry).bareImportViolations).toEqual([{ file: entry, specifier: 'super-media-element' }]);
+  });
+
+  it('catches a re-export: export … from \'…\'', () => {
+    const entry = writeEntry('re-export', `export * from 'media-tracks';\n`);
+    expect(walkImportGraph(entry).bareImportViolations).toEqual([{ file: entry, specifier: 'media-tracks' }]);
+  });
+
+  it('catches a dynamic import: import(\'…\')', () => {
+    const entry = writeEntry('dynamic', `export const load = () => import('super-media-element');\n`);
+    expect(walkImportGraph(entry).bareImportViolations).toEqual([{ file: entry, specifier: 'super-media-element' }]);
   });
 });
