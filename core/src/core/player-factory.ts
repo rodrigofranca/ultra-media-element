@@ -1,4 +1,4 @@
-import type { IMediaPlayer, AvailableFormats } from "./media-player";
+import type { IMediaPlayer, AvailableFormats, MediaPlayerError } from "./media-player";
 import { detectFormat } from "./format-detector";
 import { Format } from "./format";
 import { HlsPlayer } from "../players/hls-player";
@@ -26,17 +26,44 @@ const DEFAULT_FORMATS: AvailableFormats = {
   [Format.YOUTUBE]: "youtube",
 };
 
-const engines = new Map<string, (el: HTMLVideoElement, container?: Node) => IMediaPlayer>([
+// A YouTube source with no `container` used to throw synchronously out of
+// PlayerFactory.create() - a path UltraMediaCore.load() never wraps in
+// try/catch, so it escaped as an uncaught exception instead of the normal
+// fatal->`error`/`ready`-rejects routing every other engine's failure goes
+// through (see result-cycle2.md, defect 8). This stub is a real
+// IMediaPlayer whose onReady rejects and whose onError reports the same
+// MediaPlayerError - deferred to a microtask so UltraMediaCore.wireUp()
+// (called right after PlayerFactory.create() returns) has already
+// registered its onError listener by the time it fires.
+function containerRequiredPlayer(src: string): IMediaPlayer {
+  let onError: ((error: MediaPlayerError) => void) | undefined;
+  const error: MediaPlayerError = {
+    fatal: true,
+    category: 'otherError',
+    code: 'CONTAINER_REQUIRED',
+    message: 'YouTubePlayer requires a container element',
+    engine: 'youtube',
+    url: src,
+  };
+  return {
+    onReady: new Promise((_resolve, reject) => {
+      queueMicrotask(() => {
+        onError?.(error);
+        reject(error);
+      });
+    }),
+    onError: (cb) => { onError = cb; },
+    load: () => {},
+    destroy: () => {},
+  };
+}
+
+const engines = new Map<string, (el: HTMLVideoElement, container?: Node, src?: string) => IMediaPlayer>([
   ["hls.js", (el) => new HlsPlayer(el)],
   ["video/mp4", (el) => new VideoPlayer(el)],
   ["dash.js", (el) => new DashPlayer(el)],
   ["audio/mp3", (el) => new AudioPlayer(el)],
-  ["youtube", (el, container) => {
-    if (!container) {
-      throw new Error("YouTubePlayer requires a container element");
-    }
-    return new YouTubePlayer(el, container);
-  }],
+  ["youtube", (el, container, src) => (container ? new YouTubePlayer(el, container) : containerRequiredPlayer(src!))],
 ]);
 
 export function getCurrentFormatFromElement(el: HTMLMediaElement): Format | undefined {
@@ -63,7 +90,7 @@ export class PlayerFactory {
     }
 
     element.dataset.type = engineType;
-    const player = engine(element as HTMLVideoElement, container);
+    const player = engine(element as HTMLVideoElement, container, src);
 
     // Call load() synchronously instead of chaining it onto `onReady`: every
     // player now queues the src internally and applies it once actually

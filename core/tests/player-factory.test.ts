@@ -4,6 +4,7 @@ import { VideoPlayer } from "../src/players/video-player";
 import { HlsPlayer } from "../src/players/hls-player";
 import { YouTubePlayer } from '../src/players/youtube-player';
 import { Format } from "../src/core/format";
+import type { MediaPlayerError } from "../src/core/media-player";
 
 function createVideoElement(): HTMLVideoElement {
   return document.createElement("video");
@@ -82,5 +83,32 @@ describe("PlayerFactory", () => {
         formats: { [Format.MP4]: "unknown/engine" },
       })
     ).toThrow("No engine registered for: unknown/engine");
+  });
+
+  // cycle 2, defect 8: a YouTube source with no `container` used to throw
+  // synchronously out of create() - a codepath UltraMediaCore.load() never
+  // wraps in try/catch, so it escaped as an uncaught exception instead of
+  // going through the normal fatal-error routing every other engine uses.
+  // It must behave like any other fatal failure instead: no throw, a
+  // player whose onReady rejects and whose onError reports the same
+  // MediaPlayerError shape (both consumed by UltraMediaCore.wireUp()).
+  it("a YouTube source with no container does not throw - onReady rejects and onError reports a fatal CONTAINER_REQUIRED error", async () => {
+    const element = createVideoElement();
+
+    let player: ReturnType<typeof PlayerFactory.create> | undefined;
+    expect(() => {
+      player = PlayerFactory.create({
+        src: "https://www.youtube.com/watch?v=VIDEO_ID12",
+        element,
+      });
+    }).not.toThrow();
+
+    const reported: MediaPlayerError[] = [];
+    player!.onError?.((error) => reported.push(error));
+
+    await expect(player!.onReady).rejects.toMatchObject({ fatal: true, code: 'CONTAINER_REQUIRED', engine: 'youtube' });
+    expect(reported).toEqual([
+      expect.objectContaining({ fatal: true, code: 'CONTAINER_REQUIRED', engine: 'youtube' }),
+    ]);
   });
 });
