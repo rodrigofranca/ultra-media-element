@@ -397,3 +397,34 @@ describe('UltraMediaCore: stale tracks are cleared on teardown (cycle 2, defect 
     expect(renditionsHandler).toHaveBeenCalledWith({ type: 'renditionschange', detail: { renditions: [] } });
   });
 });
+
+describe('UltraMediaCore: leaves the <video> as it found it, except src (cycle 2, defect 4)', () => {
+  it('destroy() removes the data-type attribute PlayerFactory wrote', () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player); // writes element.dataset.type, same as the real PlayerFactory
+    const el = video();
+    const core = new UltraMediaCore(el);
+
+    core.load('a.mp4');
+    expect(el.dataset.type).toBe('video/mp4');
+
+    core.destroy();
+    expect(el.dataset.type).toBeUndefined();
+  });
+
+  it('a second UltraMediaCore on an already-attached <video> throws a clear error', () => {
+    const el = video();
+    // eslint-disable-next-line no-new
+    new UltraMediaCore(el);
+
+    expect(() => new UltraMediaCore(el)).toThrow(/already attached/);
+  });
+
+  it('sequential use (destroy() then a new UltraMediaCore on the same <video>) still works', () => {
+    const el = video();
+    const first = new UltraMediaCore(el);
+    first.destroy();
+
+    expect(() => new UltraMediaCore(el)).not.toThrow();
+  });
+});

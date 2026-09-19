@@ -2,7 +2,6 @@ import type { MediaPlayerError } from './core/media-player';
 import { SuperVideoElement, Events as SuperMediaEvents } from 'super-media-element';
 import { MediaTracksMixin } from 'media-tracks';
 import { UltraMediaCore, type UltraMediaCoreEvent } from './core/ultra-media-core';
-import { getCurrentFormatFromElement } from './core/player-factory';
 import { Format } from './core/format';
 
 /**
@@ -279,7 +278,11 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
     this.setAttribute('src', newSrc);
   }
 
+  // Sourced from the core's own state (reset to null by destroy()), not
+  // nativeEl.dataset.type - that attribute is a PlayerFactory implementation
+  // detail the core itself now cleans up on teardown, not a place to read
+  // the active format back from (see result-cycle2.md, defect 4).
   getCurrentFormat(): Format | undefined {
-    return this.nativeEl ? getCurrentFormatFromElement(this.nativeEl) : undefined;
+    return this.core?.format ?? undefined;
   }
 }

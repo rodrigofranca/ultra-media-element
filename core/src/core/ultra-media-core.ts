@@ -20,6 +20,14 @@ import { detectFormat } from './format-detector';
  */
 export type UltraMediaSource = string | { src: string; type?: Format };
 
+// Two UltraMediaCore instances attached to the same <video> would both
+// react to its native events/drive its engine and corrupt each other's
+// state - tracked here, module-wide, so the constructor can refuse a second
+// attachment with a clear error instead (see result-cycle2.md, defect 4).
+// Sequential reuse (destroy() -> new UltraMediaCore) still works: destroy()
+// releases the entry.
+const attachedMedia = new WeakSet<HTMLMediaElement>();
+
 export interface UltraMediaCoreOptions {
   // A plain Node (not HTMLElement): the shell passes its shadow root (a
   // ShadowRoot - a Node with appendChild, not an HTMLElement) so the
@@ -105,6 +113,10 @@ export class UltraMediaCore extends Emitter {
 
   constructor(media: HTMLMediaElement, options: UltraMediaCoreOptions = {}) {
     super();
+    if (attachedMedia.has(media)) {
+      throw new Error('UltraMediaCore: media already attached to another instance - call destroy() on it first.');
+    }
+    attachedMedia.add(media);
     this.media = media;
     this.options = options;
     this.ready = this.freshReadyPromise();
@@ -225,6 +237,10 @@ export class UltraMediaCore extends Emitter {
     this._audioTracks = [];
     this._rendition = 'auto';
     this._audioTrack = null;
+    // PlayerFactory.create() is the only thing that writes this - not a
+    // residue a consumer reading `media` afterwards should see (see
+    // result-cycle2.md, defect 4). A no-op when nothing was ever created.
+    delete this.media.dataset.type;
     // A format swap or destroy() must not leave the previous engine's
     // tracks visible - the new engine (if any) may never report its own
     // (e.g. the native players don't call onTracksChange at all), so this
@@ -241,5 +257,6 @@ export class UltraMediaCore extends Emitter {
     this._src = null;
     this._format = null;
     this._engine = null;
+    attachedMedia.delete(this.media);
   }
 }

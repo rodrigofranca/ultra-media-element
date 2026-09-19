@@ -196,3 +196,82 @@ test.describe('headless UltraMediaCore on a bare <video>', () => {
     expect(errors[0]).toMatchObject({ fatal: true, status: 404, engine: 'hls.js' });
   });
 });
+
+// cycle 2, defect 4: PlayerFactory.create() writes `element.dataset.type`
+// but nothing removed it - `getCurrentFormatFromElement(media)` (and
+// anything else reading `dataset.type` straight off the <video>) kept
+// reporting the old format forever, even after destroy(). Compares the
+// <video>'s own attributes/inline style before `new UltraMediaCore()` and
+// after `destroy()` - must be identical (the rule: "media ends up exactly
+// as the core found it" - src included, since destroy() also fully clears
+// it, per defect 1).
+test.describe('destroy() leaves the <video> exactly as it found it (cycle 2, defect 4)', () => {
+  const CASES = [
+    { engine: 'hls', fixture: HLS_FIXTURE },
+    { engine: 'dash', fixture: DASH_FIXTURE },
+    { engine: 'mp4', fixture: MP4_FIXTURE },
+  ];
+
+  for (const { engine, fixture } of CASES) {
+    test(`(${engine})`, async ({ page }) => {
+      await gotoCoreOnlyPage(page);
+
+      const result = await page.evaluate(async ({ fixture }) => {
+        const video = document.querySelector('#video') as HTMLVideoElement;
+        const snapshot = () => ({
+          attributes: [...video.attributes].map((a) => `${a.name}=${a.value}`).sort(),
+          inlineStyle: video.getAttribute('style'),
+        });
+
+        const before = snapshot();
+
+        const core = new (window as any).UltraMediaCore(video);
+        core.load(fixture);
+        await core.ready;
+        await new Promise((r) => setTimeout(r, 300));
+        core.destroy();
+
+        return { before, after: snapshot() };
+      }, { fixture });
+
+      expect(result.after).toEqual(result.before);
+    });
+  }
+
+  // The unit-level proof (tests/ultra-media-core.test.ts) already covers the
+  // throw itself against a fake player; this confirms it holds against a
+  // real, loaded engine too, and that sequential reuse still works.
+  test('a second UltraMediaCore on the same, still-attached <video> throws; sequential reuse after destroy() works', async ({ page }) => {
+    await gotoCoreOnlyPage(page);
+
+    const result = await page.evaluate(async ({ fixture }) => {
+      const video = document.querySelector('#video') as HTMLVideoElement;
+      const first = new (window as any).UltraMediaCore(video);
+      first.load(fixture);
+      await first.ready;
+
+      let threw = false;
+      try {
+        // eslint-disable-next-line no-new
+        new (window as any).UltraMediaCore(video);
+      } catch {
+        threw = true;
+      }
+
+      first.destroy();
+
+      let reusedOk = true;
+      try {
+        const second = new (window as any).UltraMediaCore(video);
+        second.load(fixture);
+        await second.ready;
+      } catch {
+        reusedOk = false;
+      }
+
+      return { threw, reusedOk };
+    }, { fixture: MP4_FIXTURE });
+
+    expect(result).toEqual({ threw: true, reusedOk: true });
+  });
+});

@@ -98,10 +98,28 @@ describe('own methods exist with the right shape', () => {
     warn.mockRestore();
   });
 
-  it('getCurrentFormat reads the engine recorded on nativeEl.dataset.type', () => {
+  // cycle 2, defect 4: getCurrentFormat() used to read nativeEl.dataset.type
+  // directly (via getCurrentFormatFromElement) - a residue PlayerFactory
+  // writes but destroy() never cleared, so it kept reporting the old format
+  // forever. The core's own `format` (reset to null by destroy()) is the
+  // real source of truth now; nativeEl.dataset.type is no longer consulted.
+  it('getCurrentFormat reflects the core\'s active format, and destroy() resets it to undefined', () => {
+    (PlayerFactory.create as jest.Mock).mockImplementation((({ element }: any) => {
+      element.dataset.type = 'hls.js';
+      return { destroy: jest.fn(), onReady: Promise.resolve(), load: jest.fn() };
+    }) as any);
+
     const el = createElement();
-    el.nativeEl.dataset.type = 'hls.js';
+    document.body.appendChild(el);
+    el.src = 'https://example.com/a.m3u8';
+
     expect(el.getCurrentFormat()).toBe('hls');
+
+    el.destroy();
+    expect(el.getCurrentFormat()).toBeUndefined();
+
+    el.remove();
+    (PlayerFactory.create as jest.Mock).mockReset();
   });
 });
 
