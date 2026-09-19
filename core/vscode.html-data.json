@@ -14,7 +14,7 @@
     },
     {
       "name": "ultra-media",
-      "description": "Ultra Media Element supporting HLS, DASH, MP4 and MP3.\n\n\n---\n\n\n",
+      "description": "Ultra Media Element supporting HLS, DASH, MP4 and MP3.\n\n\n---\n\n\n\n\n### **Events:**\n - **undefined** - undefined\n\n### **Methods:**\n - **destroy(): _void_** - Destroys the active player (hls.js/dash.js/YouTube/native) and releases\nits resources. Public and idempotent - safe to call repeatedly, and\nsafe to call before any player exists. Assigning `src` again afterwards\nre-initializes a fresh player and resumes playback.",
       "attributes": [
         { "name": "live", "values": [] },
         {

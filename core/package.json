@@ -17,11 +17,7 @@
     "vscode.html-data.json"
   ],
   "types": "types/global.d.ts",
-  "customElements": {
-    "plugins": [
-      "cem-plugin-vscode"
-    ]
-  },
+  "customElements": "custom-elements.json",
   "scripts": {
     "prepublishOnly": "pnpm run build",
     "dev": "vite",
