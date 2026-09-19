@@ -252,3 +252,82 @@ describe('UltraMediaElement reload after destroy() with the same src (defect 5)'
     el.remove();
   });
 });
+
+describe('UltraMediaElement src change during a synchronous DOM move (cycle 3, defect 2)', () => {
+  afterEach(() => {
+    (PlayerFactory.create as jest.Mock).mockReset();
+  });
+
+  // el.remove(); el.src = B; parent.appendChild(el) - all synchronous, so
+  // attributeChangedCallback runs while `isConnected` is still false (it
+  // used to just bail there) and connectedCallback used to only act when
+  // `!this.player` (it already existed, mid-deferred-teardown) - the src
+  // attribute became B but the player never heard about it.
+  it('applies a same-format src change made mid-move', async () => {
+    const created = trackingPlayerFactory();
+    const el = createElement();
+    document.body.appendChild(el);
+
+    el.src = 'https://example.com/a.mp4';
+    expect(created).toHaveLength(1);
+    const firstPlayer = created[0].player;
+
+    el.remove();
+    el.src = 'https://example.com/b.mp4';
+    document.body.appendChild(el);
+
+    // Same engine (mp4 -> mp4): reused via load(), no second player.
+    expect(created).toHaveLength(1);
+    expect(firstPlayer.load).toHaveBeenCalledWith('https://example.com/b.mp4');
+    expect(firstPlayer.destroy).not.toHaveBeenCalled();
+
+    await Promise.resolve();
+    await Promise.resolve();
+    // The deferred teardown microtask from the remove() above must not have
+    // torn down the player it just resumed - it reconnected before it ran.
+    expect(firstPlayer.destroy).not.toHaveBeenCalled();
+
+    el.remove();
+  });
+
+  it('applies a format-changing src change made mid-move (hls -> mp4)', async () => {
+    const created = trackingPlayerFactory();
+    const el = createElement();
+    document.body.appendChild(el);
+
+    el.src = 'https://example.com/a.m3u8';
+    expect(created).toHaveLength(1);
+    const firstPlayer = created[0].player;
+
+    el.remove();
+    el.src = 'https://example.com/b.mp4';
+    document.body.appendChild(el);
+
+    expect(firstPlayer.destroy).toHaveBeenCalledTimes(1);
+    expect(created).toHaveLength(2);
+    expect(created[1].src).toBe('https://example.com/b.mp4');
+
+    el.remove();
+  });
+
+  // Control case: moving without changing `src` must stay a pure no-op -
+  // no reload, matching the e2e coverage in cleanup.spec.ts.
+  it('does not reload when src is unchanged across the move', async () => {
+    const created = trackingPlayerFactory();
+    const el = createElement();
+    document.body.appendChild(el);
+
+    el.src = 'https://example.com/a.mp4';
+    expect(created).toHaveLength(1);
+    const firstPlayer = created[0].player;
+
+    el.remove();
+    document.body.appendChild(el);
+
+    expect(created).toHaveLength(1);
+    expect(firstPlayer.load).not.toHaveBeenCalled();
+    expect(firstPlayer.destroy).not.toHaveBeenCalled();
+
+    el.remove();
+  });
+});

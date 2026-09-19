@@ -19,6 +19,9 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
   // frameworks) doesn't tear down a still-wanted player - see
   // disconnectedCallback below and result.md "decisões de design".
   private teardownScheduled = false;
+  // src the active player last loaded - lets connectedCallback catch up a
+  // src change made mid-move, while attributeChangedCallback left it alone.
+  private loadedSrc: string | null = null;
   static skipAttributes = ['src'];
   // super-media-element forwards every native HTMLMediaElement event it
   // sees on `nativeEl` (its shadow-root-level capturing listener runs
@@ -69,9 +72,20 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
     // `src` never changed across that disconnect, so
     // attributeChangedCallback won't fire on its own to restart playback).
     // Doesn't run at all when a player is already active (e.g. a
-    // synchronous disconnect+reconnect move - see disconnectedCallback).
+    // synchronous disconnect+reconnect move - see disconnectedCallback) with
+    // an unchanged `src` - the branch below covers a `src` change made
+    // during that same move.
     if (!this.player && this.src) {
       this.initializePlayer();
+      this.loadedSrc = this.src;
+      return;
+    }
+
+    // A src change made mid-move: attributeChangedCallback saw
+    // `!isConnected` and left the still-alive player alone. Catch up now,
+    // exactly once - a no-op when src didn't change (loadedSrc matches).
+    if (this.player && this.src !== this.loadedSrc) {
+      this.applySrcChange(this.src);
     }
   }
 
@@ -142,24 +156,30 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
       await this.loadComplete;
     }
 
-    // Disconnected: leave the player alone (there shouldn't be one - see
-    // connectedCallback). `src` just becomes the pending value connect()
-    // reads whenever it next connects, whether this is the element's first
-    // connection or a reconnect after an effective teardown.
+    // Disconnected: leave the player alone - `src` becomes the pending value
+    // connectedCallback reads (and, mid-move, catches up) on reconnect.
     if (!this.isConnected) return;
 
+    this.applySrcChange(newValue);
+  }
+
+  // Destroys+recreates the player on a format change, or calls load()
+  // directly when the format is unchanged; records `loadedSrc` either way.
+  private applySrcChange(src: string): void {
     const currentFormat = this.getCurrentFormat();
-    const newFormat = detectFormat(newValue ?? '');
+    const newFormat = detectFormat(src ?? '');
 
     if (currentFormat !== newFormat) {
       this.destroy();
     }
 
     if (this.player && currentFormat === newFormat) {
-      this.player.load(newValue);
+      this.player.load(src);
     } else {
       this.initializePlayer();
     }
+
+    this.loadedSrc = src;
   }
 
   private initializePlayer() {
