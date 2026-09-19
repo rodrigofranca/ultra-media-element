@@ -50,7 +50,15 @@ export default defineConfig(({ command, mode }) => {
     lib: {
       entry: path.resolve(__dirname, target.entry),
       name: target.name,
-      fileName: (format) => `${target.fileBase}.${format}.js`,
+      // `.cjs` for the umd build, not `.js` - package.json sets
+      // "type": "module", so a plain `.js` file is always ESM to Node
+      // regardless of its actual (CJS/UMD) content, and require() of it
+      // either throws ERR_REQUIRE_ESM or (newer Node, require(esm) support)
+      // silently loads it as ESM, in both cases never reaching the UMD
+      // wrapper's own `typeof module !== 'undefined'` CJS branch - `.cjs`
+      // is unconditionally CommonJS to Node, so that branch actually runs
+      // (see result-cycle2.md, defect 5).
+      fileName: (format) => `${target.fileBase}.${format}.${format === 'umd' ? 'cjs' : 'js'}`,
       formats: ['es', 'umd'],
     },
     rollupOptions: {

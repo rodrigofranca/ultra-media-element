@@ -47,9 +47,9 @@ não paga pelo peso do `ima-ad-player`.
 
 | Elemento/API | Entry | ESM | UMD/`<script>` |
 | --- | --- | --- | --- |
-| `<ultra-media>` | `@rodrigofranca/ultra-media` | `import "@rodrigofranca/ultra-media"` | `dist/ultra-media.umd.js` |
-| `<ultra-media-ad>` | `@rodrigofranca/ultra-media/ad` | `import "@rodrigofranca/ultra-media/ad"` | `dist/ultra-media-ad.umd.js` |
-| `UltraMediaCore` (headless, sem Custom Elements) | `@rodrigofranca/ultra-media/core` | `import { UltraMediaCore } from "@rodrigofranca/ultra-media/core"` | `dist/ultra-media-core.umd.js` |
+| `<ultra-media>` | `@rodrigofranca/ultra-media` | `import "@rodrigofranca/ultra-media"` | `dist/ultra-media.umd.cjs` |
+| `<ultra-media-ad>` | `@rodrigofranca/ultra-media/ad` | `import "@rodrigofranca/ultra-media/ad"` | `dist/ultra-media-ad.umd.cjs` |
+| `UltraMediaCore` (headless, sem Custom Elements) | `@rodrigofranca/ultra-media/core` | `import { UltraMediaCore } from "@rodrigofranca/ultra-media/core"` | `dist/ultra-media-core.umd.cjs` |
 
 ```ts
 // só vídeo

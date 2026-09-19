@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 
 const FORBIDDEN_MARKERS = ['ima-ad-player', 'imasdk', 'ultra-media-ad'];
-const CORE_BUNDLES = ['dist/ultra-media.es.js', 'dist/ultra-media.umd.js'];
+const CORE_BUNDLES = ['dist/ultra-media.es.js', 'dist/ultra-media.umd.cjs'];
 
 let failed = false;
 

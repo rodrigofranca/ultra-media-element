@@ -8,20 +8,20 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/ultra-media.es.js",
-      "require": "./dist/ultra-media.umd.js"
+      "require": "./dist/ultra-media.umd.cjs"
     },
     "./ad": {
       "types": "./dist/ad.d.ts",
       "import": "./dist/ultra-media-ad.es.js",
-      "require": "./dist/ultra-media-ad.umd.js"
+      "require": "./dist/ultra-media-ad.umd.cjs"
     },
     "./core": {
       "types": "./dist/core-entry.d.ts",
       "import": "./dist/ultra-media-core.es.js",
-      "require": "./dist/ultra-media-core.umd.js"
+      "require": "./dist/ultra-media-core.umd.cjs"
     }
   },
-  "main": "./dist/ultra-media.umd.js",
+  "main": "./dist/ultra-media.umd.cjs",
   "module": "./dist/ultra-media.es.js",
   "files": [
     "dist",
@@ -54,7 +54,7 @@
     },
     {
       "name": "core UMD bundle (gzip)",
-      "path": "dist/ultra-media.umd.js",
+      "path": "dist/ultra-media.umd.cjs",
       "gzip": true,
       "limit": "11 KB"
     },
@@ -66,7 +66,7 @@
     },
     {
       "name": "ads UMD bundle (gzip)",
-      "path": "dist/ultra-media-ad.umd.js",
+      "path": "dist/ultra-media-ad.umd.cjs",
       "gzip": true,
       "limit": "21 KB"
     },
@@ -78,7 +78,7 @@
     },
     {
       "name": "headless core UMD bundle (gzip)",
-      "path": "dist/ultra-media-core.umd.js",
+      "path": "dist/ultra-media-core.umd.cjs",
       "gzip": true,
       "limit": "7.9 KB"
     }

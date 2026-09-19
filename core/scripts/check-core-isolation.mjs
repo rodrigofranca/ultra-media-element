@@ -13,7 +13,7 @@
 import { readFileSync } from 'node:fs';
 
 const FORBIDDEN_MARKERS = ['customElements', 'attachShadow', 'super-media-element', 'media-tracks', 'ResizeObserver', 'new EventTarget('];
-const CORE_BUNDLES = ['dist/ultra-media-core.es.js', 'dist/ultra-media-core.umd.js'];
+const CORE_BUNDLES = ['dist/ultra-media-core.es.js', 'dist/ultra-media-core.umd.cjs'];
 
 let failed = false;
 
