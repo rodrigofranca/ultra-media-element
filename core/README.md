@@ -45,11 +45,13 @@ O pacote publica **dois entry points independentes**. O núcleo (`<ultra-media>`
 nunca importa código de ads, direta ou transitivamente - quem só toca vídeo
 não paga pelo peso do `ima-ad-player`.
 
-| Elemento/API | Entry | ESM | UMD/`<script>` |
+| Elemento/API | Entry | ESM | `<script>` (UMD) |
 | --- | --- | --- | --- |
-| `<ultra-media>` | `@rodrigofranca/ultra-media` | `import "@rodrigofranca/ultra-media"` | `dist/ultra-media.umd.cjs` |
-| `<ultra-media-ad>` | `@rodrigofranca/ultra-media/ad` | `import "@rodrigofranca/ultra-media/ad"` | `dist/ultra-media-ad.umd.cjs` |
-| `UltraMediaCore` (headless, sem Custom Elements) | `@rodrigofranca/ultra-media/core` | `import { UltraMediaCore } from "@rodrigofranca/ultra-media/core"` | `dist/ultra-media-core.umd.cjs` |
+| `<ultra-media>` | `@rodrigofranca/ultra-media` | `import "@rodrigofranca/ultra-media"` | `dist/ultra-media.umd.js` |
+| `<ultra-media-ad>` | `@rodrigofranca/ultra-media/ad` | `import "@rodrigofranca/ultra-media/ad"` | `dist/ultra-media-ad.umd.js` |
+| `UltraMediaCore` (headless, sem Custom Elements) | `@rodrigofranca/ultra-media/core` | `import { UltraMediaCore } from "@rodrigofranca/ultra-media/core"` | `dist/ultra-media-core.umd.js` |
+
+Cada bundle UMD é publicado com dois nomes e o mesmo conteúdo: `*.umd.js` para `<script src>` (CDNs como o jsDelivr servem `.cjs` como `application/node` com `nosniff`, e o browser recusa) e `*.umd.cjs` para `require()` (o pacote é `"type": "module"`).
 
 ```ts
 // só vídeo

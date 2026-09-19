@@ -22,6 +22,8 @@
     }
   },
   "main": "./dist/ultra-media.umd.cjs",
+  "unpkg": "./dist/ultra-media.umd.js",
+  "jsdelivr": "./dist/ultra-media.umd.js",
   "module": "./dist/ultra-media.es.js",
   "files": [
     "dist",
@@ -33,7 +35,7 @@
   "scripts": {
     "prepublishOnly": "pnpm run build",
     "dev": "vite",
-    "build": "vite build && BUILD_ENTRY=ad vite build && BUILD_ENTRY=core vite build",
+    "build": "vite build && BUILD_ENTRY=ad vite build && BUILD_ENTRY=core vite build && node scripts/copy-umd-for-browsers.mjs",
     "watch": "vite build --watch",
     "preview": "vite preview",
     "test": "jest",
