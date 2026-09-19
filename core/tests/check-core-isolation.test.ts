@@ -20,7 +20,6 @@ const NEW_MARKERS = [
   'queueMicrotask',
   'structuredClone',
   'IntersectionObserver',
-  'globalThis',
   'replaceAll',
   '.at(',
   'Object.hasOwn',
@@ -60,11 +59,21 @@ describe('check-core-isolation.mjs: forbidden-global markers (cycle 3, defect 4)
     expect(status).toBe(0);
   });
 
-  it.each(NEW_MARKERS)('flags "%s" when present in the ES bundle', (marker) => {
-    writeBundles(tmpDir, `export class UltraMediaCore {}\nconst x = ${JSON.stringify(marker)};\n// literal: ${marker}\n`);
+  it.each(NEW_MARKERS)('flags "%s" when present as real code in the ES bundle', (marker) => {
+    writeBundles(tmpDir, `export class UltraMediaCore {}\nconst x = ${JSON.stringify(marker)};\n`);
     const { status, output } = runGuard(tmpDir);
     expect(status).toBe(1);
     expect(output).toContain(marker);
+  });
+
+  // A comment merely *mentioning* a forbidden API (this file's own doc
+  // comment above does, and so does the script's) must not trip the guard -
+  // the same false-positive class tests/core-dependency-guard.test.ts's
+  // stripComments() already guards against for the source-level walk.
+  it.each(NEW_MARKERS)('does not flag "%s" when it only appears in a comment', (marker) => {
+    writeBundles(tmpDir, `export class UltraMediaCore {}\n// mentions ${marker} in prose, not code\n/* also here: ${marker} */\n`);
+    const { status } = runGuard(tmpDir);
+    expect(status).toBe(0);
   });
 
   it('flags a marker present only in the UMD bundle, not just the ES one', () => {
@@ -77,10 +86,34 @@ describe('check-core-isolation.mjs: forbidden-global markers (cycle 3, defect 4)
 
   it('still catches the original ADR-0001 markers (customElements, attachShadow, ResizeObserver, new EventTarget()', () => {
     for (const marker of ['customElements', 'attachShadow', 'ResizeObserver', 'new EventTarget(']) {
-      writeBundles(tmpDir, `// ${marker}\n`);
+      writeBundles(tmpDir, `const x = ${JSON.stringify(marker)};\n`);
       const { status, output } = runGuard(tmpDir);
       expect(status).toBe(1);
       expect(output).toContain(marker);
     }
+  });
+
+  // globalThis is special-cased, not a plain substring marker: every UMD
+  // bundle Rollup emits (ours included) carries
+  // `typeof globalThis!="undefined"?globalThis:c||self` as its own
+  // environment-detection boilerplate - already the guarded self/window-
+  // fallback pattern this rule wants, not a violation of it.
+  describe('globalThis: only an unguarded reference is a violation', () => {
+    it('does not flag Rollup\'s own UMD wrapper pattern (typeof globalThis!="undefined"?globalThis:self)', () => {
+      writeBundles(
+        tmpDir,
+        'export class UltraMediaCore {}\n',
+        '(function(g,f){typeof exports=="object"?f(exports):(g=typeof globalThis!="undefined"?globalThis:g||self,f(g.x={}))})(this,function(x){});\n'
+      );
+      const { status } = runGuard(tmpDir);
+      expect(status).toBe(0);
+    });
+
+    it('flags an unguarded globalThis reference (not immediately preceded by typeof)', () => {
+      writeBundles(tmpDir, 'export class UltraMediaCore {}\nconst x = globalThis.foo;\n');
+      const { status, output } = runGuard(tmpDir);
+      expect(status).toBe(1);
+      expect(output).toContain('globalThis');
+    });
   });
 });

@@ -15,11 +15,11 @@ import { readFileSync } from 'node:fs';
 // cycle 3, defect 4: the original list only covered ADR-0001's own examples
 // (Custom Elements/Shadow DOM/Mux packages). Extended with every other
 // ~ES2017-unsafe global the brief called out - none of these exist on the
-// oldest Tizen/webOS runtimes `/core` targets either. `globalThis` itself is
-// deliberately included: the core must use `self`/`window` with a fallback
-// instead (see src/utils/unit.ts). The `#` private-field rule stays out of
-// this list for the same reason as before (hex literals) - covered by
-// tests/core-dependency-guard.test.ts's source-level walk instead.
+// oldest Tizen/webOS runtimes `/core` targets either. The `#` private-field
+// rule stays out of this list for the same reason as before (hex literals) -
+// covered by tests/core-dependency-guard.test.ts's source-level walk
+// instead. `globalThis` gets its own check below, not this list - see its
+// comment.
 const FORBIDDEN_MARKERS = [
   'customElements',
   'attachShadow',
@@ -30,22 +30,52 @@ const FORBIDDEN_MARKERS = [
   'queueMicrotask',
   'structuredClone',
   'IntersectionObserver',
-  'globalThis',
   'replaceAll',
   '.at(',
   'Object.hasOwn',
 ];
 const CORE_BUNDLES = ['dist/ultra-media-core.es.js', 'dist/ultra-media-core.umd.cjs'];
 
+// A plain comment *mentioning* a forbidden API (like the one two lines up,
+// or this file's own dependency-rule doc comment) would otherwise
+// false-positive a minified-but-comment-preserving bundle - same risk
+// tests/core-dependency-guard.test.ts's stripComments() already guards
+// against for the source-level walk. The `[^:]` exclusion keeps `://` in a
+// bundled URL (e.g. sdk-config.ts's CDN URLs) from being mistaken for a
+// line comment.
+function stripComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+// `globalThis` can't be a plain substring marker: every UMD bundle Rollup
+// emits (including our own ad/element ones, not just /core) carries
+// `typeof globalThis!="undefined"?globalThis:c||self` verbatim as its own
+// environment-detection boilerplate - already exactly the guarded
+// `self`-fallback pattern this rule asks *our* code to use, not a violation
+// of it (both the `typeof` check and the reference it guards use the
+// identifier). Strip that exact idiom first; any `globalThis` left over is
+// a real, unguarded reference our own code introduced.
+const GLOBALTHIS_GUARDED_IDIOM = /typeof\s+globalThis\s*(?:!==?|===?)\s*["']undefined["']\s*\?\s*globalThis\s*:/g;
+
+function findUnguardedGlobalThis(content) {
+  return content.replace(GLOBALTHIS_GUARDED_IDIOM, '').includes('globalThis');
+}
+
 let failed = false;
 
 for (const file of CORE_BUNDLES) {
-  const content = readFileSync(file, 'utf8');
+  const content = stripComments(readFileSync(file, 'utf8'));
   for (const marker of FORBIDDEN_MARKERS) {
     if (content.includes(marker)) {
       console.error(`core isolation violation: "${marker}" found in ${file}`);
       failed = true;
     }
+  }
+  if (findUnguardedGlobalThis(content)) {
+    console.error(`core isolation violation: unguarded "globalThis" (not "typeof globalThis") found in ${file}`);
+    failed = true;
   }
 }
 
