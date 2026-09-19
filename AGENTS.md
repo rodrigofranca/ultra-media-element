@@ -11,6 +11,12 @@ optional.
 
 All development happens in `core/`. Run every command from there.
 
+- `src/index.ts` — core entry point (`@rodrigofranca/ultra-media`), registers
+  **only** `<ultra-media>`. Never import anything from `src/ultra-media-ad.ts`
+  here, directly or transitively — that's what keeps ads out of the core
+  bundle (see `scripts/check-bundle-isolation.mjs`, run by `pnpm size`).
+- `src/ad.ts` — ad entry point (`@rodrigofranca/ultra-media/ad`), registers
+  **only** `<ultra-media-ad>`. Pulls in `ima-ad-player`.
 - `src/ultra-media-element.ts` — main `<ultra-media>` custom element
 - `src/core/player-factory.ts` — picks a player from the detected format
 - `src/core/format-detector.ts` — URL → format detection
@@ -21,11 +27,15 @@ All development happens in `core/`. Run every command from there.
 - `src/players/` — one class per format (Hls, Dash, Video, Audio, YouTube),
   plus `native-media-error.ts` (shared MediaError → MediaPlayerError mapping
   for the two native-<video>/<audio>-backed players)
-- `src/ultra-media-ad.ts` — `<ultra-media-ad>`, wraps `ima-ad-player`
+- `src/ultra-media-ad.ts` — `<ultra-media-ad>`, wraps `ima-ad-player`. Talks to
+  the core element only through its public contract (`nativeEl`, DOM
+  attributes/events) — never imports `src/core`/`src/players` internals, so
+  it can be published as a separate bundle without embedding the core.
 - `tests/` — Jest + jsdom, one `*.test.ts` per area under test
 - `e2e/` — Playwright, real-browser playback against the built `dist/`
   (see `e2e/fixtures/generate.mjs` for the synthetic MP4/HLS/DASH/MP3
-  fixtures and `e2e/tests/*.spec.ts` for the specs)
+  fixtures, `e2e/tests/*.spec.ts` for the specs, and
+  `e2e/tests/entrypoints.spec.ts` for the core/ads bundle-isolation guard)
 
 ## Commands
 
@@ -33,9 +43,9 @@ All development happens in `core/`. Run every command from there.
 cd core
 pnpm install --frozen-lockfile   # always use the lockfile; never bump ranges by hand
 pnpm typecheck                   # tsc --noEmit
-pnpm build                       # vite build -> dist/ (ESM + UMD)
+pnpm build                       # vite build, twice (core entry, then ad entry) -> dist/ (ESM + UMD each)
 pnpm test                        # jest
-pnpm size                        # size-limit, gzip budget on dist/*.js
+pnpm size                        # bundle-isolation guard + size-limit, gzip budget on dist/*.js
 pnpm dev                         # local dev server (HTTPS + HMR)
 pnpm e2e                         # Playwright, hermetic (no external network), builds dist/ first
 pnpm e2e:network                 # Playwright, @network specs only (YouTube) - not part of the CI gate
@@ -77,3 +87,10 @@ sequence plus `pnpm build` on every PR and push to `main`, and a separate
    (`feat:`, `fix:`, `chore:`, `test:`, ...).
 6. Don't hand-edit `dist/`, `pnpm-lock.yaml`, or `pnpm-workspace.yaml`;
    regenerate them via `pnpm install`/`pnpm build`.
+7. **The core entry (`src/index.ts` → `@rodrigofranca/ultra-media`) never
+   imports ad code.** `<ultra-media-ad>` (`src/ultra-media-ad.ts`) is
+   published as the separate `@rodrigofranca/ultra-media/ad` entry
+   (`src/ad.ts`) so `ima-ad-player` never lands in the core bundle. This is
+   enforced by `scripts/check-bundle-isolation.mjs` (part of `pnpm size`)
+   and by `e2e/tests/entrypoints.spec.ts`; don't weaken either to make a
+   change pass. See README.md "Entry points" for the consumer-facing API.

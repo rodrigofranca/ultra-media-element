@@ -6,7 +6,14 @@
   "packageManager": "pnpm@11.15.1",
   "exports": {
     ".": {
-      "import": "./dist/ultra-media.es.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/ultra-media.es.js",
+      "require": "./dist/ultra-media.umd.js"
+    },
+    "./ad": {
+      "types": "./dist/ad.d.ts",
+      "import": "./dist/ultra-media-ad.es.js",
+      "require": "./dist/ultra-media-ad.umd.js"
     }
   },
   "main": "./dist/ultra-media.umd.js",
@@ -21,29 +28,42 @@
   "scripts": {
     "prepublishOnly": "pnpm run build",
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && BUILD_ENTRY=ad vite build",
     "watch": "vite build --watch",
     "preview": "vite preview",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "size": "size-limit",
+    "size": "node scripts/check-bundle-isolation.mjs && size-limit",
     "analyze": "cem analyze",
+    "analyze:bundle": "source-map-explorer dist/ultra-media.es.js --gzip --no-border-checks",
     "e2e": "pnpm run build && playwright test --config=e2e/playwright.config.ts",
     "e2e:network": "pnpm run build && E2E_NETWORK=1 playwright test --config=e2e/playwright.config.ts",
     "serve:examples": "wet serve --cors --livereload --redirect :examples/ --log-level error"
   },
   "size-limit": [
     {
-      "name": "ESM bundle (gzip)",
+      "name": "core ESM bundle (gzip)",
       "path": "dist/ultra-media.es.js",
       "gzip": true,
-      "limit": "35.6 KB"
+      "limit": "14.4 KB"
     },
     {
-      "name": "UMD bundle (gzip)",
+      "name": "core UMD bundle (gzip)",
       "path": "dist/ultra-media.umd.js",
       "gzip": true,
-      "limit": "30.2 KB"
+      "limit": "11 KB"
+    },
+    {
+      "name": "ads ESM bundle (gzip)",
+      "path": "dist/ultra-media-ad.es.js",
+      "gzip": true,
+      "limit": "25.1 KB"
+    },
+    {
+      "name": "ads UMD bundle (gzip)",
+      "path": "dist/ultra-media-ad.umd.js",
+      "gzip": true,
+      "limit": "21 KB"
     }
   ],
   "keywords": [],
@@ -64,6 +84,7 @@
     "jest-environment-jsdom": "^29.7.0",
     "jsdom": "^26.1.0",
     "size-limit": "^14.0.0",
+    "source-map-explorer": "^2.5.3",
     "ts-jest": "^29.3.4",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",

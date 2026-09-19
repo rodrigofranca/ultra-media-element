@@ -7,9 +7,20 @@ import fs from 'fs';
 import pkg from './package.json';
 import dts from 'vite-plugin-dts';
 
-const packageName = 'ultra-media';
+// Two independent entry points share this config so ads never end up in the
+// core bundle: `pnpm build` runs Vite twice (see package.json), once per
+// entry below, selected via BUILD_ENTRY. The core build always runs first
+// with emptyOutDir so it starts from a clean dist/; the ad build then adds
+// its own files without wiping the core ones.
+const ENTRIES = {
+  main: { entry: 'src/index.ts', name: 'ultra-media', fileBase: 'ultra-media' },
+  ad: { entry: 'src/ad.ts', name: 'ultra-media-ad', fileBase: 'ultra-media-ad' },
+};
 
 export default defineConfig(({ command, mode }) => {
+  const isAd = process.env.BUILD_ENTRY === 'ad';
+  const target = isAd ? ENTRIES.ad : ENTRIES.main;
+
   return  {
     plugins: [
       replace({
@@ -22,7 +33,7 @@ export default defineConfig(({ command, mode }) => {
       mode === 'development' && mkcert(),
       dts({
         outputDir: 'dist',
-        entryRoot: 'src',               // foca no src/index.ts
+        entryRoot: 'src',               // foca no src/index.ts e src/ad.ts
         include: ['src'],      // 👈 restringe o que será gerado
         exclude: ['src/**/internal/**', 'src/utils/**', 'src/players/**'],
         // rollupTypes: true,
@@ -31,10 +42,11 @@ export default defineConfig(({ command, mode }) => {
       }),
     ],
   build: {
+    emptyOutDir: !isAd,
     lib: {
-      entry: path.resolve(__dirname, 'src/index.ts'),
-      name: packageName,
-      fileName: (format) => `${packageName}.${format}.js`,
+      entry: path.resolve(__dirname, target.entry),
+      name: target.name,
+      fileName: (format) => `${target.fileBase}.${format}.js`,
       formats: ['es', 'umd'],
     },
     rollupOptions: {

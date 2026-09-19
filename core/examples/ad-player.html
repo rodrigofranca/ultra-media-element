@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Ultra Media Player with Ads</title>
   <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
-  <script type="module" src="../dist/ultra-media-element.es.js"></script>
+  <!-- Core entry: registers <ultra-media> only, no ad code. -->
+  <script type="module" src="../dist/ultra-media.es.js"></script>
+  <!-- Ad entry: separate bundle, registers <ultra-media-ad> and pulls in ima-ad-player. -->
+  <script type="module" src="../dist/ultra-media-ad.es.js"></script>
   <script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
 </head>
 
