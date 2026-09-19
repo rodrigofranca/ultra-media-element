@@ -14,6 +14,12 @@ import { detectFormat } from './core/format-detector';
 export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
 
   private player: IMediaPlayer | null = null;
+  // disconnectedCallback defers its teardown to a microtask so a
+  // synchronous disconnect+reconnect (an element moved in the DOM, common in
+  // frameworks) doesn't tear down a still-wanted player - see
+  // disconnectedCallback below and result.md "decisões de design".
+  private teardownScheduled = false;
+  private pendingReload = false;
   static skipAttributes = ['src'];
   public isLive = false;
   public declare loadComplete?: Promise<void>;
@@ -42,6 +48,49 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
 
   async connectedCallback() {
     super.connectedCallback?.();
+
+    // Reconnecting after an *effective* teardown (disconnectedCallback's
+    // microtask actually ran destroy(), i.e. this wasn't just a synchronous
+    // move) needs an explicit reload: the `src` attribute never changed
+    // across the disconnect, so attributeChangedCallback won't fire on its
+    // own to restart playback.
+    if (this.pendingReload) {
+      this.pendingReload = false;
+      if (this.src) {
+        this.initializePlayer();
+      }
+    }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback?.();
+
+    if (this.teardownScheduled) return;
+    this.teardownScheduled = true;
+
+    queueMicrotask(() => {
+      this.teardownScheduled = false;
+
+      // Reconnected before this microtask ran (e.g. appendChild() moving
+      // the element to a new parent disconnects then reconnects it
+      // synchronously) - connectedCallback already ran, playback was never
+      // interrupted, nothing to tear down.
+      if (this.isConnected) return;
+
+      this.destroy();
+      this.pendingReload = true;
+    });
+  }
+
+  /**
+   * Destroys the active player (hls.js/dash.js/YouTube/native) and releases
+   * its resources. Public and idempotent - safe to call repeatedly, and
+   * safe to call before any player exists. Assigning `src` again afterwards
+   * re-initializes a fresh player and resumes playback.
+   */
+  destroy(): void {
+    this.player?.destroy?.();
+    this.player = null;
   }
 
   static get observedAttributes() {
@@ -61,7 +110,7 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
       const newFormat = detectFormat(newValue ?? '');
 
       if (currentFormat !== newFormat) {
-        this.destroyPlayer();
+        this.destroy();
       }
 
       if (this.player && currentFormat === newFormat) {
@@ -146,13 +195,5 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
 
   getCurrentFormat(): Format | undefined {
     return this.nativeEl ? getCurrentFormatFromElement(this.nativeEl) : undefined;
-  }
-
-  private destroyPlayer() {
-    if (this.player?.destroy) {
-      this.player.destroy();
-    }
-
-    this.player = null;
   }
 }
