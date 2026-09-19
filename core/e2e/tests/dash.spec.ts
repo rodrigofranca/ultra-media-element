@@ -24,9 +24,10 @@ test.describe('dash', () => {
     expect(duration).toBeCloseTo(fixtureManifest.duration, 0);
 
     await expect.poll(async () => (await audioTracks(page)).length, { timeout: 10_000 }).toBe(fixtureManifest.dash.audioTracks);
-    // Real rendition count/shape is asserted (and shown broken) in the
-    // dedicated test.fail() spec below - see the Descoberta comment there.
-    await expect.poll(async () => (await videoRenditions(page)).length).toBe(fixtureManifest.dash.videoAdaptationSets);
+    // One rendition per bitrate Representation (2, for this fixture's
+    // single AdaptationSet) - see the dedicated spec below for the full
+    // width/height/bitrate assertion and result.md "decisões de design".
+    await expect.poll(async () => (await videoRenditions(page)).length).toBe(fixtureManifest.dash.videoRepresentationsInAdaptationSet);
 
     await callMethod(page, 'play');
     await expect.poll(async () => (await getProp(page, 'currentTime')) as number, { timeout: 10_000 }).toBeGreaterThan(1);
@@ -49,20 +50,13 @@ test.describe('dash', () => {
     expect((await getLog(page)).map((e) => e.name)).not.toContain('error');
   });
 
-  // Descoberta: core/src/players/dash-player.ts:72-79 builds `tracks.renditions`
-  // from `player.getTracksFor('video')`, which returns one MediaInfo per DASH
-  // AdaptationSet - not one per bitrate Representation. A normal multi-bitrate
-  // manifest (like this fixture: 1 AdaptationSet, 2 Representations at 480x270
-  // and 320x180, see e2e/fixtures/dash/manifest.mpd) collapses to a single
-  // rendition with width/height/bitrate all `undefined` (those fields live in
-  // MediaInfo.bitrateList, which dash-player.ts never reads). hls-player.ts's
-  // equivalent code (lines 54-61) reads hls.js's `data.levels`, which *is*
-  // already a flat per-rendition list, so HLS doesn't have this gap - see
-  // e2e/tests/hls.spec.ts, which asserts the same shape successfully.
-  // Not fixed here (out of scope - no src/ changes). This test documents the
-  // expected/correct behavior and is left failing on purpose.
+  // core/src/players/dash-player.ts now builds `tracks.renditions` from
+  // `player.getRepresentationsByType('video')`, which returns one
+  // Representation per bitrate (with real width/height/bandwidth) instead
+  // of one MediaInfo per AdaptationSet - see result.md "decisões de
+  // design" for how that was confirmed against dash.js 5.2.1's actual
+  // source (dist/modern/umd/dash.all.debug.js).
   test('exposes one videoRendition per bitrate Representation', async ({ page }) => {
-    test.fail();
     await gotoPlayer(page);
     await setSrc(page, FIXTURE);
 

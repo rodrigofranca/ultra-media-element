@@ -23,7 +23,7 @@ export class DashPlayer implements IMediaPlayer {
   private tracksChangeCallback?: (tracks: MediaTracks) => void;
   private errorCallback?: (error: MediaPlayerError) => void;
   private audioTracks: any[] = [];
-  private videoTracks: any[] = [];
+  private videoRepresentations: any[] = [];
 
   constructor(private element: HTMLVideoElement) {
     log("Powered by Dash.js");
@@ -57,9 +57,16 @@ export class DashPlayer implements IMediaPlayer {
     this.player.on(this.dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
       if (this.tracksChangeCallback) {
         const audioTracks = this.player.getTracksFor('audio');
-        const videoTracks = this.player.getTracksFor('video');
+        // One entry per bitrate Representation of the current video
+        // MediaInfo - not one per AdaptationSet like getTracksFor('video')
+        // returns (see result.md "decisões de design" - confirmed by
+        // reading Stream#getRepresentationsByType in
+        // dist/modern/umd/dash.all.debug.js). Indices here line up 1:1
+        // with setRepresentationForTypeByIndex, which reads from the same
+        // underlying list, so manual rendition selection keeps working.
+        const videoRepresentations = this.player.getRepresentationsByType('video');
         this.audioTracks = audioTracks;
-        this.videoTracks = videoTracks;
+        this.videoRepresentations = videoRepresentations;
 
         const tracks: MediaTracks = {
           audio: audioTracks?.map((track: any, index: number) => ({
@@ -69,13 +76,13 @@ export class DashPlayer implements IMediaPlayer {
             language: track.lang,
             default: track.roles?.includes('main')
           })),
-          renditions: videoTracks?.map((track: any, index: number) => ({
+          renditions: videoRepresentations?.map((representation: any, index: number) => ({
             id: `${index}`,
-            width: track.width,
-            height: track.height,
-            bitrate: track.bitrate,
-            frameRate: track.frameRate,
-            codec: track.codec
+            width: representation.width,
+            height: representation.height,
+            bitrate: representation.bandwidth,
+            frameRate: representation.frameRate,
+            codec: representation.codecs
           }))
         };
         this.tracksChangeCallback(tracks);
@@ -100,10 +107,10 @@ export class DashPlayer implements IMediaPlayer {
   }
 
   switchRendition(renditionId: string) {
-    if (!this.player || !this.videoTracks) return;
-    const videoTrackId = parseInt(renditionId, 10);
-    if (!isNaN(videoTrackId) && this.videoTracks[videoTrackId]) {
-      this.player.setQualityFor('video', videoTrackId);
+    if (!this.player || !this.videoRepresentations) return;
+    const index = parseInt(renditionId, 10);
+    if (!isNaN(index) && this.videoRepresentations[index]) {
+      this.player.setRepresentationForTypeByIndex('video', index);
     }
   }
 
