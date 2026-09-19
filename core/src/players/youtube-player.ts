@@ -358,8 +358,13 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
       this.iframe.allowFullscreen = true;
       this.iframe.src = `https://www.youtube.com/embed/${videoId}?controls=0&preload=metadata&enablejsapi=1&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1`;
 
-      // this.container.shadowRoot?.removeChild(this.element);
-      this.container.shadowRoot?.appendChild(this.iframe);
+      // A plain light-DOM append, not `container.shadowRoot.appendChild` -
+      // this file is imported by UltraMediaCore (ADR-0001), which must not
+      // depend on Shadow DOM (the headless target may have none at all).
+      // The <ultra-media> shell passes itself as `container`; its shadow
+      // template's unnamed <slot> re-projects this into the shadow tree, so
+      // the visual result is unchanged - see result.md "mapa do que moveu".
+      this.container.appendChild(this.iframe);
 
       if (!this.iframe) {
         return;

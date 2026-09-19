@@ -29,10 +29,11 @@ describe('YouTubePlayer', () => {
 
   it('should call load and create an iframe in the container', async () => {
     const element = createVideoElement();
-    // The player appends the iframe to the container's shadow root (real
-    // usage passes the <ultra-media> custom element, which always has one).
+    // ADR-0001: this file is imported by UltraMediaCore, which must not
+    // depend on Shadow DOM - the iframe is a plain light-DOM child of
+    // whatever `container` is given (real <ultra-media> usage passes
+    // itself; its shadow template's unnamed <slot> re-projects it).
     const container = document.createElement('div');
-    container.attachShadow({ mode: 'open' });
     const player = new YouTubePlayer(element, container);
 
     // Mock the YT.Player constructor
@@ -47,7 +48,7 @@ describe('YouTubePlayer', () => {
     player.load('https://www.youtube.com/watch?v=VIDEO_ID123');
     await player.onReady;
 
-    expect(container.shadowRoot?.querySelector('iframe')).not.toBeNull();
+    expect(container.querySelector('iframe')).not.toBeNull();
     expect(element.querySelector('iframe')).toBeNull();
     expect(window.YT.Player).toHaveBeenCalled();
   });
@@ -135,7 +136,6 @@ describe('YouTubePlayer cancels stale sources while the IFrame API is still load
     await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
       const element = createVideoElement();
       const container = document.createElement('div');
-      container.attachShadow({ mode: 'open' });
       const player = new FreshYouTubePlayer(element, container);
 
       player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
@@ -153,7 +153,6 @@ describe('YouTubePlayer cancels stale sources while the IFrame API is still load
     await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
       const element = createVideoElement();
       const container = document.createElement('div');
-      container.attachShadow({ mode: 'open' });
       const player = new FreshYouTubePlayer(element, container);
 
       player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
@@ -171,7 +170,6 @@ describe('YouTubePlayer cancels stale sources while the IFrame API is still load
     await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
       const element = createVideoElement();
       const container = document.createElement('div');
-      container.attachShadow({ mode: 'open' });
       const player = new FreshYouTubePlayer(element, container);
 
       player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
@@ -181,7 +179,7 @@ describe('YouTubePlayer cancels stale sources while the IFrame API is still load
       await player.onReady;
 
       expect(created).toEqual([]);
-      expect(container.shadowRoot?.querySelector('iframe')).toBeNull();
+      expect(container.querySelector('iframe')).toBeNull();
     });
   });
 });
