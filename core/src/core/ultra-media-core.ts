@@ -219,6 +219,12 @@ export class UltraMediaCore extends Emitter {
     this._audioTracks = [];
     this._rendition = 'auto';
     this._audioTrack = null;
+    // A format swap or destroy() must not leave the previous engine's
+    // tracks visible - the new engine (if any) may never report its own
+    // (e.g. the native players don't call onTracksChange at all), so this
+    // is the only place stale renditions/audioTracks otherwise get cleared.
+    this.emit('audiotrackschange', { audioTracks: this._audioTracks });
+    this.emit('renditionschange', { renditions: this._renditions });
   }
 
   /** Idempotent. Leaves `media` clean and reusable by this core or a new one. */

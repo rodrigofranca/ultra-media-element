@@ -347,3 +347,53 @@ describe('UltraMediaCore: rendition/audioTrack selection by id', () => {
     expect(handler).toHaveBeenCalledWith({ type: 'audiotrackchange', detail: { audioTrack: '2' } });
   });
 });
+
+describe('UltraMediaCore: stale tracks are cleared on teardown (cycle 2, defect 3)', () => {
+  it('destroy() clears renditions/audioTracks and emits both change events with empty lists', () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(video());
+    core.load('a.m3u8');
+    player.emitTracks({
+      audio: [{ id: '0', kind: 'main', label: 'English', language: 'en' }],
+      renditions: [{ id: '0', width: 1280, height: 720 }],
+    });
+    expect(core.renditions).toHaveLength(1);
+
+    const renditionsHandler = jest.fn();
+    const audioHandler = jest.fn();
+    core.addEventListener('renditionschange', renditionsHandler);
+    core.addEventListener('audiotrackschange', audioHandler);
+
+    core.destroy();
+
+    expect(core.renditions).toEqual([]);
+    expect(core.audioTracks).toEqual([]);
+    expect(renditionsHandler).toHaveBeenCalledWith({ type: 'renditionschange', detail: { renditions: [] } });
+    expect(audioHandler).toHaveBeenCalledWith({ type: 'audiotrackschange', detail: { audioTracks: [] } });
+  });
+
+  it('a format change during load() clears the previous engine\'s tracks before the new one reports its own', () => {
+    const first = fakePlayer();
+    const second = fakePlayer();
+    mockFactoryReturning(first, second);
+    const core = new UltraMediaCore(video());
+
+    core.load('a.m3u8'); // hls
+    first.emitTracks({
+      audio: [{ id: '0', kind: 'main', label: 'English', language: 'en' }],
+      renditions: [{ id: '0', width: 1280, height: 720 }],
+    });
+    expect(core.renditions).toHaveLength(1);
+
+    const renditionsHandler = jest.fn();
+    core.addEventListener('renditionschange', renditionsHandler);
+
+    core.load('b.mp4'); // native player - never reports onTracksChange
+
+    // Cleared immediately by the teardown, not left over from hls.
+    expect(core.renditions).toEqual([]);
+    expect(core.audioTracks).toEqual([]);
+    expect(renditionsHandler).toHaveBeenCalledWith({ type: 'renditionschange', detail: { renditions: [] } });
+  });
+});

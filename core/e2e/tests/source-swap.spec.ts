@@ -1,5 +1,5 @@
 import { test, expect } from '../utils/hermetic';
-import { gotoPlayer, instrument, setSrc, getLog, resetLog, callMethod, getProp } from '../utils/media';
+import { gotoPlayer, instrument, setSrc, getLog, resetLog, callMethod, getProp, videoRenditions } from '../utils/media';
 
 const SOURCES = {
   hls: '/fixtures/hls/master.m3u8',
@@ -42,5 +42,22 @@ test.describe('source swap', () => {
     await expect.poll(async () => (await getLog(page)).some((e) => e.name === 'loadedmetadata'), { timeout: 10_000 }).toBe(true);
 
     expect((await getLog(page)).map((e) => e.name)).not.toContain('error');
+  });
+
+  // cycle 2, defect 3: the native mp4 player never calls onTracksChange, so
+  // the hls renditions used to stay visible on `videoRenditions` forever
+  // after switching away from hls - UltraMediaCore.teardownPlayer() must
+  // clear them itself (see ultra-media-core.test.ts for the unit-level
+  // proof against a fake player).
+  test('switching hls -> mp4 clears the stale hls renditions', async ({ page }) => {
+    await gotoPlayer(page);
+
+    await setSrc(page, SOURCES.hls);
+    await expect.poll(async () => (await videoRenditions(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
+
+    await setSrc(page, SOURCES.mp4);
+    await expect.poll(async () => (await getProp(page, 'readyState')) as number, { timeout: 10_000 }).toBeGreaterThan(0);
+
+    expect(await videoRenditions(page)).toEqual([]);
   });
 });
