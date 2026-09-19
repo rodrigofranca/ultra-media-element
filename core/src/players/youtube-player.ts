@@ -1,4 +1,5 @@
 import type { IMediaPlayer } from "../core/media-player";
+import { YOUTUBE_IFRAME_API_URL } from "../core/sdk-config";
 
 class TimeRanges {
   private ranges: [number, number][];
@@ -23,7 +24,7 @@ class TimeRanges {
   }
 }
 
-const API_URL = 'https://www.youtube.com/iframe_api';
+const API_URL = YOUTUBE_IFRAME_API_URL;
 const API_GLOBAL = 'YT';
 const API_GLOBAL_READY = 'onYouTubeIframeAPIReady';
 

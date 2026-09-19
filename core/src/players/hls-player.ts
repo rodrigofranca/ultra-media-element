@@ -2,13 +2,14 @@ import type { IMediaPlayer, MediaTracks, MediaPlayerError } from "../core/media-
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
+import { HLS_JS_SDK_URL } from "../core/sdk-config";
 
 export class HlsPlayer implements IMediaPlayer {
   private nativeEl: HTMLVideoElement;
   public onReady: Promise<void>;
   private Hls: any;
   private hls: any;
-  private sdkSrc: string = 'https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js';
+  private sdkSrc: string = HLS_JS_SDK_URL;
   private config = {}
   private tracksChangeCallback?: (tracks: MediaTracks) => void;
   private errorCallback?: (error: MediaPlayerError) => void;

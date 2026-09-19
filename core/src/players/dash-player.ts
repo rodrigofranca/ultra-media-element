@@ -2,13 +2,14 @@ import type { IMediaPlayer, MediaTracks, MediaPlayerError } from "../core/media-
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
+import { DASHJS_SDK_URL } from "../core/sdk-config";
 
 export class DashPlayer implements IMediaPlayer {
   private nativeEl: HTMLVideoElement;
   public onReady: Promise<void>;
   private dashjs: any;
   private player: any;
-  private sdkSrc: string = 'https://cdn.jsdelivr.net/npm/dashjs@latest/dist/dash.all.min.js';
+  private sdkSrc: string = DASHJS_SDK_URL;
   private config = {
     streaming: {
       abr: {
