@@ -1,5 +1,20 @@
-import type { IMediaPlayer } from "../core/media-player";
+import type { IMediaPlayer, MediaErrorCategory, MediaPlayerError } from "../core/media-player";
 import { YOUTUBE_IFRAME_API_URL } from "../core/sdk-config";
+
+// https://developers.google.com/youtube/iframe_api_reference#onError - every
+// one of these is terminal for the requested video (no automatic retry from
+// the IFrame API), so all map to fatal:true.
+const YT_ERROR_MESSAGES: Record<number, string> = {
+  2: 'Invalid video ID or parameter',
+  5: 'HTML5 player error',
+  100: 'Video not found or removed',
+  101: 'Playback disallowed by the video owner (embedding)',
+  150: 'Playback disallowed by the video owner (embedding)',
+};
+
+function categorizeYouTubeError(code: number): MediaErrorCategory {
+  return code === 5 ? 'mediaError' : 'otherError';
+}
 
 class TimeRanges {
   private ranges: [number, number][];
@@ -73,6 +88,8 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   private lastCurrentTime = 0;
   private seeking = false;
   private isDestroyed = false;
+  private errorCallback?: (error: MediaPlayerError) => void;
+  private currentSrc = '';
 
   // Backup of original HTMLMediaElement methods for restoration
   private originalMethods = {
@@ -295,7 +312,12 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     console.log('YouTubePlayer: Proxy cleanup completed');
   }
 
+  onError(callback: (error: MediaPlayerError) => void): void {
+    this.errorCallback = callback;
+  }
+
   load(src: string): void {
+    this.currentSrc = src;
     this.element.dispatchEvent(new Event('emptied'));
     this.element.dispatchEvent(new Event('loadstart'));
 
@@ -447,7 +469,16 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
 
   private onPlayerError(event: any): void {
     if (this.isDestroyed) return;
-    console.error('YouTubePlayer onPlayerError', event);
+    const code = event?.data;
+    this.errorCallback?.({
+      fatal: true,
+      category: categorizeYouTubeError(code),
+      code: String(code),
+      message: YT_ERROR_MESSAGES[code] || `YouTube player error (code ${code})`,
+      engine: 'youtube',
+      url: this.currentSrc || undefined,
+      cause: event,
+    });
   }
 
   private startTimeUpdate(): void {

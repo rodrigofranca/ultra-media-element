@@ -1,8 +1,24 @@
-import type { IMediaPlayer, MediaTracks, MediaPlayerError } from "../core/media-player";
+import type { IMediaPlayer, MediaTracks, MediaPlayerError, MediaErrorCategory } from "../core/media-player";
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
 import { HLS_JS_SDK_URL } from "../core/sdk-config";
+
+// hls.js's own ErrorTypes ('networkError' | 'mediaError' | 'keySystemError'
+// | 'muxError' | 'otherError') already line up with our category taxonomy
+// for the two engine-agnostic buckets; the two hls-specific types collapse
+// into the closest one (DRM out of scope - see AGENTS.md golden rule 4).
+function categorizeHlsError(type: string): MediaErrorCategory {
+  switch (type) {
+    case 'networkError':
+      return 'networkError';
+    case 'mediaError':
+    case 'muxError':
+      return 'mediaError';
+    default:
+      return 'otherError';
+  }
+}
 
 export class HlsPlayer implements IMediaPlayer {
   private nativeEl: HTMLVideoElement;
@@ -32,11 +48,14 @@ export class HlsPlayer implements IMediaPlayer {
     this.hls.on(this.Hls.Events.ERROR, (_event: any, data: any) => {
       if (this.errorCallback) {
         this.errorCallback({
-          type: data.type,
-          details: data.details,
-          fatal: data.fatal,
-          statusCode: data.response?.code,
+          fatal: !!data.fatal,
+          category: categorizeHlsError(data.type),
+          code: data.details,
+          message: data.error?.message || data.details,
+          engine: 'hls.js',
           url: data.url,
+          status: data.response?.code,
+          cause: data.error,
         });
       }
     });

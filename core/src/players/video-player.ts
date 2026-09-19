@@ -1,8 +1,8 @@
 import type { IMediaPlayer, MediaPlayerError } from "../core/media-player";
+import { mapNativeMediaError } from "./native-media-error";
 
 export class VideoPlayer implements IMediaPlayer {
   public onReady: Promise<void>;
-  private errorCallback?: (error: MediaPlayerError) => void;
   private errorHandler?: (e: Event) => void;
 
   constructor(private element: HTMLVideoElement) {
@@ -14,16 +14,8 @@ export class VideoPlayer implements IMediaPlayer {
   }
 
   onError(callback: (error: MediaPlayerError) => void) {
-    this.errorCallback = callback;
     this.errorHandler = () => {
-      const mediaError = this.element.error;
-      callback({
-        type: 'mediaError',
-        details: mediaError?.message || 'unknown',
-        fatal: true,
-        statusCode: mediaError?.code,
-        message: mediaError?.message,
-      });
+      callback(mapNativeMediaError(this.element.error, 'video/mp4', this.element.currentSrc || this.element.src));
     };
     this.element.addEventListener('error', this.errorHandler);
   }
@@ -31,6 +23,7 @@ export class VideoPlayer implements IMediaPlayer {
   destroy(): void {
     if (this.errorHandler) {
       this.element.removeEventListener('error', this.errorHandler);
+      this.errorHandler = undefined;
     }
     // `element.src = ''` is itself a valid (if unusual) source per the HTML
     // spec and fires a real `error` event - removeAttribute + load() lets

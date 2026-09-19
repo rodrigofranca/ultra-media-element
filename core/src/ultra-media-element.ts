@@ -1,5 +1,5 @@
 import type { IMediaPlayer, MediaTracks, MediaPlayerError } from './core/media-player';
-import { SuperVideoElement } from 'super-media-element';
+import { SuperVideoElement, Events as SuperMediaEvents } from 'super-media-element';
 import { MediaTracksMixin } from 'media-tracks';
 import { getCurrentFormatFromElement, PlayerFactory } from './core/player-factory';
 import { Format } from './core/format';
@@ -21,6 +21,18 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
   private teardownScheduled = false;
   private pendingReload = false;
   static skipAttributes = ['src'];
+  // super-media-element forwards every native HTMLMediaElement event it
+  // sees on `nativeEl` (its shadow-root-level capturing listener runs
+  // before any listener a player attaches directly on `nativeEl`, so it
+  // can't be pre-empted there) as a same-named CustomEvent with
+  // `detail: undefined`. For every event except `error` that's the whole
+  // story, but VideoPlayer/AudioPlayer *also* listen for the native
+  // `error` event to build a proper MediaPlayerError and route it through
+  // the single fatal/warning policy below - leaving `error` in this list
+  // would let that generic, detail-less forward reach listeners first,
+  // ahead of (and instead of) the real shaped one. Excluding it here makes
+  // player.onError() the only source of `error`/`warning`, for every engine.
+  static Events = SuperMediaEvents.filter((type) => type !== 'error');
   public isLive = false;
   public declare loadComplete?: Promise<void>;
   public declare isLoaded: boolean;
@@ -133,8 +145,13 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
       container: this,
     });
 
+    // Single error policy for every engine: only a fatal error (playback
+    // cannot continue without intervention) becomes the element's `error`
+    // event; anything recoverable becomes `warning`, same detail shape.
+    // Deciding this once, centrally, from `error.fatal` keeps engines from
+    // each re-implementing (and inevitably drifting on) the same routing.
     this.player.onError?.((error: MediaPlayerError) => {
-      this.dispatchEvent(new CustomEvent('error', {
+      this.dispatchEvent(new CustomEvent(error.fatal ? 'error' : 'warning', {
         bubbles: true,
         composed: true,
         detail: error,
