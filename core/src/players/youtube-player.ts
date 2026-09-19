@@ -90,6 +90,11 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   private isDestroyed = false;
   private errorCallback?: (error: MediaPlayerError) => void;
   private currentSrc = '';
+  // Last requested src. Each load() registers its own `.onReady.then(...)`
+  // (see load() below) - this lets a continuation tell whether a later
+  // load() has already superseded it once the (shared) API promise
+  // resolves, so an A -> B -> C swap before that only ever materializes C.
+  private pendingSrc?: string;
 
   // Backup of original HTMLMediaElement methods for restoration
   private originalMethods = {
@@ -316,13 +321,15 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   }
 
   load(src: string): void {
+    this.pendingSrc = src;
     this.currentSrc = src;
     this.element.dispatchEvent(new Event('emptied'));
     this.element.dispatchEvent(new Event('loadstart'));
 
     this.onReady.then(() => {
-      // Guard: se o player foi destruído externamente (ex: troca de formato), cancela
-      if (this.isDestroyed) return;
+      // Bail if destroyed, or if a later load() call already superseded
+      // this one - see `pendingSrc`'s comment above.
+      if (this.isDestroyed || this.pendingSrc !== src) return;
 
       const videoId = src.match(MATCH_SRC)?.[1];
       if (!videoId) {
