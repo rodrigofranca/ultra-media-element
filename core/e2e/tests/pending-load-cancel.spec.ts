@@ -21,8 +21,11 @@ const SDK_FILES: Record<string, string> = {
 // of `page.evaluate()` round-trips - is guaranteed to land well before the
 // SDK script "finishes loading", opening the race window player-factory.ts
 // used to lose (see its and HlsPlayer/DashPlayer's `destroyed`/`pendingSrc`
-// comments).
-const SDK_DELAY_MS = 1500;
+// comments). Generous margin (rather than e.g. 500ms) because at the
+// default e2e parallelism (11 workers) those `page.evaluate()` round-trips
+// can themselves take a while under CPU contention - see result.md
+// "decisões de design".
+const SDK_DELAY_MS = 3000;
 
 /**
  * Registers a route for the given SDK URL that delays the response by
@@ -76,6 +79,7 @@ test.describe('cancel in-flight player creation while the SDK is still loading',
     // irrelevant) CDN script finally loaded, so it went ahead and requested
     // the cancelled manifest/segments anyway.
     test(`destroy() before the SDK finishes loading requests no manifest/segment (${engine})`, async ({ page }) => {
+      test.setTimeout(60_000);
       await gotoPlayer(page);
       await delaySdkResponse(page, sdkUrl);
       const manifestRequests = await trackRequestUrls(page, manifestGlob);
@@ -95,6 +99,7 @@ test.describe('cancel in-flight player creation while the SDK is still loading',
     // Same race, triggered by removing the element from the DOM instead of
     // an explicit destroy() call (disconnectedCallback's own teardown path).
     test(`removing the element before the SDK finishes loading requests no manifest/segment (${engine})`, async ({ page }) => {
+      test.setTimeout(60_000);
       await gotoPlayer(page);
       await delaySdkResponse(page, sdkUrl);
       const manifestRequests = await trackRequestUrls(page, manifestGlob);
@@ -116,6 +121,7 @@ test.describe('cancel in-flight player creation while the SDK is still loading',
     // the static server resolves the file ignoring it (server/static-server.
     // mjs), so each variant still serves the real fixture.
     test(`rapid src swap (A -> B -> C) while the SDK is still loading only requests C (${engine})`, async ({ page }) => {
+      test.setTimeout(60_000);
       await gotoPlayer(page);
       await delaySdkResponse(page, sdkUrl);
       const manifestRequests = await trackRequestUrls(page, manifestGlob);
@@ -124,7 +130,7 @@ test.describe('cancel in-flight player creation while the SDK is still loading',
       await setSrc(page, `${manifest}?v=b`);
       await setSrc(page, `${manifest}?v=c`);
 
-      await expect.poll(() => manifestRequests.length, { timeout: SDK_DELAY_MS + 10_000 }).toBeGreaterThan(0);
+      await expect.poll(() => manifestRequests.length, { timeout: SDK_DELAY_MS + 20_000 }).toBeGreaterThan(0);
       // Give any (incorrect) extra request a moment to show up too.
       await new Promise((resolve) => setTimeout(resolve, 500));
 

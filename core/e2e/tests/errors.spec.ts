@@ -105,11 +105,15 @@ test.describe('error handling', () => {
   // raises DOWNLOAD_ERROR_ID_CONTENT/INITIALIZATION_CODE once its own
   // internal retry budget for that resource (default: 3 retries, 1s apart -
   // mediaPlayerModel's retryAttempts/retryIntervals, read out of
-  // dash.all.debug.js) is exhausted - by then playback is genuinely stuck,
-  // so this must reach the element as `error`, fatal:true (see dash-player.
-  // ts's isDashErrorRecoverable comment). expect.poll's timeout below
-  // accounts for that ~3s retry window plus request overhead.
+  // dash.all.debug.js) is exhausted - ~3-4s under normal load. by then
+  // playback is genuinely stuck, so this must reach the element as `error`,
+  // fatal:true (see dash-player.ts's isDashErrorRecoverable comment).
+  // Generous timeouts below: at the default e2e parallelism (11 workers)
+  // dash.js's own setTimeout-based retry clock can run well behind
+  // wall-clock time under CPU contention, and this was observed to exceed
+  // a 15s poll under that load - see result.md "decisões de design".
   test('(d) a DASH media segment failing on every request emits a fatal error', async ({ page }) => {
+    test.setTimeout(60_000);
     await gotoPlayer(page);
     await instrument(page);
 
@@ -119,7 +123,7 @@ test.describe('error handling', () => {
 
     await setSrc(page, '/fixtures/dash/manifest.mpd');
 
-    await expect.poll(async () => (await getLog(page)).some((e) => e.name === 'error'), { timeout: 15_000 }).toBe(true);
+    await expect.poll(async () => (await getLog(page)).some((e) => e.name === 'error'), { timeout: 45_000 }).toBe(true);
 
     const errorEvent = (await getLog(page)).find((e) => e.name === 'error');
     const detail = errorEvent?.detail as Record<string, unknown>;
