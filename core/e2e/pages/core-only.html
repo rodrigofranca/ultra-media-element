@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>UltraMediaCore e2e harness - no custom element registered</title>
+  <script type="module">
+    import { UltraMediaCore } from '/dist/ultra-media-core.es.js';
+    window.UltraMediaCore = UltraMediaCore;
+  </script>
+</head>
+<body>
+  <!-- A completely ordinary <video>, not <ultra-media> - this page never
+       registers any custom element, proving the /core entry is truly
+       headless (ADR-0001, delivery plan step 2). -->
+  <video id="video" muted playsinline></video>
+</body>
+</html>

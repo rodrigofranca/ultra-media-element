@@ -1,4 +1,4 @@
-import type { IMediaPlayer, AvailableFormats } from "./media-player";
+import type { IMediaPlayer, AvailableFormats, MediaPlayerError } from "./media-player";
 import { detectFormat } from "./format-detector";
 import { Format } from "./format";
 import { HlsPlayer } from "../players/hls-player";
@@ -10,8 +10,12 @@ import { YouTubePlayer } from "../players/youtube-player";
 export type PlayerFactoryProps = {
   src: string;
   element: HTMLMediaElement;
-  container?: HTMLElement;
+  // A plain Node (e.g. a ShadowRoot), not HTMLElement - see
+  // UltraMediaCoreOptions.container's comment (ultra-media-core.ts).
+  container?: Node;
   formats?: AvailableFormats;
+  /** Explicit format override - skips detectFormat(src). Used by UltraMediaCore.load({ src, type }). */
+  format?: Format;
 };
 
 const DEFAULT_FORMATS: AvailableFormats = {
@@ -22,17 +26,47 @@ const DEFAULT_FORMATS: AvailableFormats = {
   [Format.YOUTUBE]: "youtube",
 };
 
-const engines = new Map<string, (el: HTMLVideoElement, container?: HTMLElement) => IMediaPlayer>([
+// A YouTube source with no `container` used to throw synchronously out of
+// PlayerFactory.create() - a path UltraMediaCore.load() never wraps in
+// try/catch, so it escaped as an uncaught exception instead of the normal
+// fatal->`error`/`ready`-rejects routing every other engine's failure goes
+// through (see result-cycle2.md, defect 8). This stub is a real
+// IMediaPlayer whose onReady rejects and whose onError reports the same
+// MediaPlayerError - deferred to a microtask so UltraMediaCore.wireUp()
+// (called right after PlayerFactory.create() returns) has already
+// registered its onError listener by the time it fires.
+function containerRequiredPlayer(src: string): IMediaPlayer {
+  let onError: ((error: MediaPlayerError) => void) | undefined;
+  const error: MediaPlayerError = {
+    fatal: true,
+    category: 'otherError',
+    code: 'CONTAINER_REQUIRED',
+    message: 'YouTubePlayer requires a container element',
+    engine: 'youtube',
+    url: src,
+  };
+  return {
+    // Deferred via a resolved-promise continuation, not the newer global
+    // microtask-scheduling helper - that one doesn't exist on the ~ES2017
+    // Smart TV runtimes this targets (see result-cycle3.md, defect 4).
+    onReady: new Promise((_resolve, reject) => {
+      Promise.resolve().then(() => {
+        onError?.(error);
+        reject(error);
+      });
+    }),
+    onError: (cb) => { onError = cb; },
+    load: () => {},
+    destroy: () => {},
+  };
+}
+
+const engines = new Map<string, (el: HTMLVideoElement, container?: Node, src?: string) => IMediaPlayer>([
   ["hls.js", (el) => new HlsPlayer(el)],
   ["video/mp4", (el) => new VideoPlayer(el)],
   ["dash.js", (el) => new DashPlayer(el)],
   ["audio/mp3", (el) => new AudioPlayer(el)],
-  ["youtube", (el, container) => {
-    if (!container) {
-      throw new Error("YouTubePlayer requires a container element");
-    }
-    return new YouTubePlayer(el, container);
-  }],
+  ["youtube", (el, container, src) => (container ? new YouTubePlayer(el, container) : containerRequiredPlayer(src!))],
 ]);
 
 export function getCurrentFormatFromElement(el: HTMLMediaElement): Format | undefined {
@@ -50,16 +84,21 @@ export function getCurrentFormatFromElement(el: HTMLMediaElement): Format | unde
 }
 
 export class PlayerFactory {
-  static create({ src, element, container, formats }: PlayerFactoryProps): IMediaPlayer {
-    const engineType = this.resolveEngine(src, formats ?? DEFAULT_FORMATS);
+  static create({ src, element, container, formats, format }: PlayerFactoryProps): IMediaPlayer {
+    const engineType = this.resolveEngine(src, formats ?? DEFAULT_FORMATS, format);
     const engine = engines.get(engineType);
 
     if (!engine) {
       throw new Error(`No engine registered for: ${engineType}`);
     }
 
-    element.dataset.type = engineType;
-    const player = engine(element as HTMLVideoElement, container);
+    // No longer writes `element.dataset.type` here - a <video> owned by a
+    // host may already carry its own `data-type` attribute for unrelated
+    // reasons, and this used to clobber it (and later delete it outright on
+    // teardown). UltraMediaCore now learns the engine via resolveEngine()
+    // below directly, not by reading it back off the DOM (see
+    // result-cycle3.md, defect 1).
+    const player = engine(element as HTMLVideoElement, container, src);
 
     // Call load() synchronously instead of chaining it onto `onReady`: every
     // player now queues the src internally and applies it once actually
@@ -74,8 +113,11 @@ export class PlayerFactory {
     return player;
   }
 
-  private static resolveEngine(src: string, formats: AvailableFormats): string {
-    const format = detectFormat(src);
+  // Public so UltraMediaCore can learn the resolved engine name without
+  // reading it back off the <video> - the exact same resolution create()
+  // itself just used (see result-cycle3.md, defect 1).
+  static resolveEngine(src: string, formats: AvailableFormats = DEFAULT_FORMATS, explicitFormat?: Format): string {
+    const format = explicitFormat ?? detectFormat(src);
 
     if (!format) {
       throw new Error(`Unsupported media source: ${src}`);

@@ -8,15 +8,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/ultra-media.es.js",
-      "require": "./dist/ultra-media.umd.js"
+      "require": "./dist/ultra-media.umd.cjs"
     },
     "./ad": {
       "types": "./dist/ad.d.ts",
       "import": "./dist/ultra-media-ad.es.js",
-      "require": "./dist/ultra-media-ad.umd.js"
+      "require": "./dist/ultra-media-ad.umd.cjs"
+    },
+    "./core": {
+      "types": "./dist/core-entry.d.ts",
+      "import": "./dist/ultra-media-core.es.js",
+      "require": "./dist/ultra-media-core.umd.cjs"
     }
   },
-  "main": "./dist/ultra-media.umd.js",
+  "main": "./dist/ultra-media.umd.cjs",
+  "unpkg": "./dist/ultra-media.umd.js",
+  "jsdelivr": "./dist/ultra-media.umd.js",
   "module": "./dist/ultra-media.es.js",
   "files": [
     "dist",
@@ -28,12 +35,12 @@
   "scripts": {
     "prepublishOnly": "pnpm run build",
     "dev": "vite",
-    "build": "vite build && BUILD_ENTRY=ad vite build",
+    "build": "vite build && BUILD_ENTRY=ad vite build && BUILD_ENTRY=core vite build && node scripts/copy-umd-for-browsers.mjs",
     "watch": "vite build --watch",
     "preview": "vite preview",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "size": "node scripts/check-bundle-isolation.mjs && size-limit",
+    "size": "node scripts/check-bundle-isolation.mjs && node scripts/check-core-isolation.mjs && size-limit",
     "analyze": "cem analyze",
     "analyze:bundle": "source-map-explorer dist/ultra-media.es.js --gzip --no-border-checks",
     "e2e": "pnpm run build && playwright test --config=e2e/playwright.config.ts",
@@ -45,13 +52,13 @@
       "name": "core ESM bundle (gzip)",
       "path": "dist/ultra-media.es.js",
       "gzip": true,
-      "limit": "14.4 KB"
+      "limit": "16.5 KB"
     },
     {
       "name": "core UMD bundle (gzip)",
-      "path": "dist/ultra-media.umd.js",
+      "path": "dist/ultra-media.umd.cjs",
       "gzip": true,
-      "limit": "11 KB"
+      "limit": "12 KB"
     },
     {
       "name": "ads ESM bundle (gzip)",
@@ -61,9 +68,21 @@
     },
     {
       "name": "ads UMD bundle (gzip)",
-      "path": "dist/ultra-media-ad.umd.js",
+      "path": "dist/ultra-media-ad.umd.cjs",
       "gzip": true,
       "limit": "21 KB"
+    },
+    {
+      "name": "headless core ESM bundle (gzip)",
+      "path": "dist/ultra-media-core.es.js",
+      "gzip": true,
+      "limit": "12 KB"
+    },
+    {
+      "name": "headless core UMD bundle (gzip)",
+      "path": "dist/ultra-media-core.umd.cjs",
+      "gzip": true,
+      "limit": "9 KB"
     }
   ],
   "keywords": [],

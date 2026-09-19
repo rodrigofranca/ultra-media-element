@@ -14,7 +14,16 @@ export class AudioPlayer implements IMediaPlayer {
   }
 
   onError(callback: (error: MediaPlayerError) => void) {
+    // Called once per load() by UltraMediaCore, which reuses this player
+    // across same-format loads: replace the listener, never stack them.
+    if (this.errorHandler) {
+      this.element.removeEventListener('error', this.errorHandler);
+    }
     this.errorHandler = () => {
+      // The media element load algorithm resets `error` to null when a new
+      // load starts, so an `error` event with no MediaError is a stale one
+      // queued for the source that load superseded - not this load's.
+      if (!this.element.error) return;
       callback(mapNativeMediaError(this.element.error, 'audio/mp3', this.element.currentSrc || this.element.src));
     };
     this.element.addEventListener('error', this.errorHandler);

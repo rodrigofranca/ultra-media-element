@@ -45,10 +45,13 @@ O pacote publica **dois entry points independentes**. O núcleo (`<ultra-media>`
 nunca importa código de ads, direta ou transitivamente - quem só toca vídeo
 não paga pelo peso do `ima-ad-player`.
 
-| Elemento | Entry | ESM | UMD/`<script>` |
+| Elemento/API | Entry | ESM | `<script>` (UMD) |
 | --- | --- | --- | --- |
 | `<ultra-media>` | `@rodrigofranca/ultra-media` | `import "@rodrigofranca/ultra-media"` | `dist/ultra-media.umd.js` |
 | `<ultra-media-ad>` | `@rodrigofranca/ultra-media/ad` | `import "@rodrigofranca/ultra-media/ad"` | `dist/ultra-media-ad.umd.js` |
+| `UltraMediaCore` (headless, sem Custom Elements) | `@rodrigofranca/ultra-media/core` | `import { UltraMediaCore } from "@rodrigofranca/ultra-media/core"` | `dist/ultra-media-core.umd.js` |
+
+Cada bundle UMD é publicado com dois nomes e o mesmo conteúdo: `*.umd.js` para `<script src>` (CDNs como o jsDelivr servem `.cjs` como `application/node` com `nosniff`, e o browser recusa) e `*.umd.cjs` para `require()` (o pacote é `"type": "module"`).
 
 ```ts
 // só vídeo
@@ -75,6 +78,60 @@ núcleo ser duplicado nem embutido.
 > `<ultra-media-ad>` no mesmo bundle. Quem usa `<ultra-media-ad>` agora
 > precisa do import adicional `@rodrigofranca/ultra-media/ad` (ou da tag
 > `<script>` equivalente) - ver tabela acima.
+
+---
+
+## 🧠 Headless core (`UltraMediaCore`)
+
+ADR-0001 divide o pacote em duas camadas: `UltraMediaCore` é uma classe pura
+(zero dependências de runtime, sem Custom Elements, sem Shadow DOM) que se
+anexa a um `<video>`/`<audio>` **que ela não cria e não é dona** - o host
+continua controlando o elemento (e pode rodar seu próprio stack de ads sobre
+ele). `<ultra-media>` é a casca fina construída em cima dela.
+
+Público-alvo: hosts que já têm seu próprio elemento de mídia (players com
+kernel próprio, integrações com ad stacks como IMA que exigem o `<video>`
+real) e ambientes sem Custom Elements v1 (Smart TVs mais antigas).
+
+```ts
+import { UltraMediaCore } from '@rodrigofranca/ultra-media/core';
+
+const video = document.querySelector('video')!; // seu próprio <video>
+const core = new UltraMediaCore(video);
+
+core.addEventListener('error', (e) => console.error(e.detail));
+core.addEventListener('renditionschange', (e) => console.log(e.detail.renditions));
+
+core.load('https://example.com/master.m3u8'); // ou { src, type: Format.HLS }
+await core.ready; // resolve quando a engine está pronta; rejeita em erro fatal/superação
+
+core.rendition = '1';       // seleção por id, não por índice/altura
+core.audioTrack = 'pt-BR';  // idem
+
+core.destroy(); // idempotente; deixa `video` limpo e reutilizável
+```
+
+API (implementada nesta extração - ver `docs/public-api.md` e o ADR para o
+que ainda não existe: `request`, `live`, `sdk`, `preferNative`, `retry`,
+`configure()`, `textTracks`, `goToLive()`, `registerEngine()`):
+
+- `new UltraMediaCore(media, { container? })`
+- `load(source: string | { src, type? })`, `destroy()` (idempotente)
+- `media`, `src`, `format`, `engine`, `ready` (`Promise<void>`, uma por `load()`)
+- `renditions`, `rendition` (get/set por id ou `'auto'`)
+- `audioTracks`, `audioTrack` (get/set por id)
+- `addEventListener`/`removeEventListener` para `error`, `warning`, `ready`,
+  `sourcechange`, `enginechange`, `renditionschange`, `renditionchange`,
+  `audiotrackschange`, `audiotrackchange` - eventos simples `{ type, detail }`,
+  não `Event`/`CustomEvent` reais (o construtor de `EventTarget` falta nas
+  TVs mais antigas visadas).
+
+Regra de dependência (com guarda automática -
+`tests/core-dependency-guard.test.ts` + `scripts/check-core-isolation.mjs`,
+parte de `pnpm size`): nada sob `src/core-entry.ts` pode importar
+`super-media-element`, `media-tracks` ou a casca, nem usar Custom Elements,
+Shadow DOM, `ResizeObserver`, o construtor de `EventTarget` ou campos
+privados `#`.
 
 ---
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, jest, afterEach } from '@jest/globals';
 import { UltraMediaElement } from '../src/ultra-media-element';
 import { PlayerFactory } from '../src/core/player-factory';
 
@@ -6,8 +6,10 @@ import { PlayerFactory } from '../src/core/player-factory';
 // aren't part of Jest's transform pipeline (see jest.config.cjs) - real
 // browser/e2e coverage for their behavior lives in core/e2e/tests/*.spec.ts.
 // This unit test only exercises UltraMediaElement's own destroy()/
-// connectedCallback/disconnectedCallback logic, so a minimal stand-in for
-// each base class is enough: just the pieces ultra-media-element.ts's
+// connectedCallback/disconnectedCallback logic (delegated to a *real*
+// UltraMediaCore underneath - only PlayerFactory.create is mocked, so the
+// core's own reuse/teardown branching runs for real), so a minimal stand-in
+// for each base class is enough: just the pieces ultra-media-element.ts's
 // constructor and lifecycle callbacks touch.
 // `src` is a real property on the native SuperVideoElement (backed by the
 // `src` attribute) and it's what actually adds 'src' to the merged
@@ -15,10 +17,29 @@ import { PlayerFactory } from '../src/core/player-factory';
 // (see super-media-element.js) - both are needed here so tests further
 // down can exercise the real attribute-driven init/reload path instead of
 // only UltraMediaElement's own destroy()/connect debounce logic.
+//
+// ADR-0001 Fase 2 note: this file used to reach into the element's private
+// `player` field directly (`(el as any).player = fakePlayer()`) to test
+// destroy()/connect/disconnect in isolation. That field moved into
+// UltraMediaCore and the element now keeps ONE core instance alive for its
+// whole lifetime (destroy() clears the core's *internal* player, not the
+// core itself - see UltraMediaCore.destroy()), so every test here now goes
+// through the public `src` attribute + the same `trackingPlayerFactory()`
+// mock every other describe block already used, and asserts on the
+// observable effect (was PlayerFactory.create called again? was the fake
+// player's destroy() called?) instead of a private field's identity/value.
 jest.mock('super-media-element', () => ({
   SuperVideoElement: class extends HTMLElement {
     static observedAttributes = ['src'];
     private __nativeEl?: HTMLVideoElement;
+    // The real super-media-element attaches an open shadow root before
+    // nativeEl exists - matched here so createCore()'s `this.shadowRoot ??
+    // this` (cycle 2, defect 2) exercises its real branch, not the
+    // shadow-DOM-less fallback.
+    constructor() {
+      super();
+      this.attachShadow({ mode: 'open' });
+    }
     get nativeEl() {
       if (!this.__nativeEl) this.__nativeEl = document.createElement('video');
       return this.__nativeEl;
@@ -43,12 +64,14 @@ jest.mock('media-tracks', () => ({
 }));
 
 // player-factory.ts itself hits the network (loadSDK); these tests only
-// care about *when* UltraMediaElement asks it for a player, so it's
-// replaced with a tracking stub - `getCurrentFormatFromElement` stays real
-// since attributeChangedCallback's format-diffing depends on it.
+// care about *when* the core asks it for a player, so it's replaced with a
+// tracking stub. resolveEngine() stays real - UltraMediaCore.load() calls
+// it directly (cycle 3, defect 1) instead of reading the engine back off
+// the <video>'s data-type, which real PlayerFactory.create() no longer
+// writes.
 jest.mock('../src/core/player-factory', () => {
   const actual = jest.requireActual('../src/core/player-factory') as any;
-  return { ...actual, PlayerFactory: { create: jest.fn() } };
+  return { ...actual, PlayerFactory: { create: jest.fn(), resolveEngine: actual.PlayerFactory.resolveEngine } };
 });
 
 if (!customElements.get('ultra-media')) {
@@ -68,13 +91,11 @@ type CreatedPlayer = { src: string; player: ReturnType<typeof fakePlayer> };
 /**
  * Stubs PlayerFactory.create() to record every player it's asked to build,
  * without touching the network - lets these tests assert *how many* players
- * got created/destroyed and with which src, the way the real factory would
- * report format via `element.dataset.type`.
+ * got created/destroyed and with which src.
  */
 function trackingPlayerFactory(): CreatedPlayer[] {
   const created: CreatedPlayer[] = [];
-  (PlayerFactory.create as jest.Mock).mockImplementation((({ src, element }: { src: string; element: HTMLVideoElement }) => {
-    element.dataset.type = src.includes('.m3u8') ? 'hls.js' : src.includes('.mpd') ? 'dash.js' : 'video/mp4';
+  (PlayerFactory.create as jest.Mock).mockImplementation((({ src }: { src: string; element: HTMLVideoElement }) => {
     const player = fakePlayer();
     created.push({ src, player });
     return player;
@@ -82,43 +103,50 @@ function trackingPlayerFactory(): CreatedPlayer[] {
   return created;
 }
 
+afterEach(() => {
+  (PlayerFactory.create as jest.Mock).mockReset();
+});
+
 describe('UltraMediaElement#destroy', () => {
-  it('is a no-op when no player exists yet', () => {
+  it('is a no-op when no core exists yet', () => {
     const el = createElement();
     expect(() => el.destroy()).not.toThrow();
   });
 
-  it('destroys the active player and clears it', () => {
+  it('destroys the active player', () => {
+    const created = trackingPlayerFactory();
     const el = createElement();
-    const player = fakePlayer();
-    (el as any).player = player;
+    document.body.appendChild(el);
+    el.src = 'https://example.com/a.mp4';
 
     el.destroy();
 
-    expect(player.destroy).toHaveBeenCalledTimes(1);
-    expect((el as any).player).toBeNull();
+    expect(created[0].player.destroy).toHaveBeenCalledTimes(1);
+    el.remove();
   });
 
   it('is idempotent - calling it again does not re-invoke the old player', () => {
+    const created = trackingPlayerFactory();
     const el = createElement();
-    const player = fakePlayer();
-    (el as any).player = player;
+    document.body.appendChild(el);
+    el.src = 'https://example.com/a.mp4';
 
     el.destroy();
     el.destroy();
     el.destroy();
 
-    expect(player.destroy).toHaveBeenCalledTimes(1);
-    expect((el as any).player).toBeNull();
+    expect(created[0].player.destroy).toHaveBeenCalledTimes(1);
+    el.remove();
   });
 });
 
 describe('UltraMediaElement disconnect/reconnect debounce', () => {
   it('tears the player down after an effective disconnect (element left removed)', async () => {
+    const created = trackingPlayerFactory();
     const el = createElement();
     document.body.appendChild(el);
-    const player = fakePlayer();
-    (el as any).player = player;
+    el.src = 'https://example.com/a.mp4';
+    const player = created[0].player;
 
     el.remove();
     expect(player.destroy).not.toHaveBeenCalled();
@@ -128,14 +156,14 @@ describe('UltraMediaElement disconnect/reconnect debounce', () => {
     await Promise.resolve();
 
     expect(player.destroy).toHaveBeenCalledTimes(1);
-    expect((el as any).player).toBeNull();
   });
 
   it('does not tear the player down when moved synchronously (disconnect immediately followed by reconnect)', async () => {
+    const created = trackingPlayerFactory();
     const el = createElement();
     document.body.appendChild(el);
-    const player = fakePlayer();
-    (el as any).player = player;
+    el.src = 'https://example.com/a.mp4';
+    const player = created[0].player;
 
     // Simulates a framework re-parenting the element: disconnect then
     // reconnect within the same synchronous tick, before the teardown
@@ -147,17 +175,12 @@ describe('UltraMediaElement disconnect/reconnect debounce', () => {
     await Promise.resolve();
 
     expect(player.destroy).not.toHaveBeenCalled();
-    expect((el as any).player).toBe(player);
 
     el.remove();
   });
 });
 
 describe('UltraMediaElement src while disconnected (defect 4)', () => {
-  afterEach(() => {
-    (PlayerFactory.create as jest.Mock).mockReset();
-  });
-
   // Remove the element, let the teardown microtask actually run (an
   // *effective* disconnect), then change `src` while still disconnected,
   // then reconnect. attributeChangedCallback used to initialize a player
@@ -209,10 +232,6 @@ describe('UltraMediaElement src while disconnected (defect 4)', () => {
 });
 
 describe('UltraMediaElement reload after destroy() with the same src (defect 5)', () => {
-  afterEach(() => {
-    (PlayerFactory.create as jest.Mock).mockReset();
-  });
-
   it('reassigning the same src after destroy() re-initializes the player', () => {
     const created = trackingPlayerFactory();
     const el = createElement();
@@ -254,10 +273,6 @@ describe('UltraMediaElement reload after destroy() with the same src (defect 5)'
 });
 
 describe('UltraMediaElement src change during a synchronous DOM move (cycle 3, defect 2)', () => {
-  afterEach(() => {
-    (PlayerFactory.create as jest.Mock).mockReset();
-  });
-
   // el.remove(); el.src = B; parent.appendChild(el) - all synchronous, so
   // attributeChangedCallback runs while `isConnected` is still false (it
   // used to just bail there) and connectedCallback used to only act when
@@ -327,6 +342,86 @@ describe('UltraMediaElement src change during a synchronous DOM move (cycle 3, d
     expect(created).toHaveLength(1);
     expect(firstPlayer.load).not.toHaveBeenCalled();
     expect(firstPlayer.destroy).not.toHaveBeenCalled();
+
+    el.remove();
+  });
+});
+
+describe('UltraMediaElement passes its shadow root as the core container (cycle 2, defect 2)', () => {
+  // The core (and YouTubePlayer, imported by it) must never depend on
+  // Shadow DOM itself (ADR-0001) - but the *shell* owns one, and passing
+  // itself as `container` (the old behavior) put the YouTube iframe
+  // directly in the element's light DOM instead. See
+  // core/tests/youtube-player.test.ts for the corresponding proof that
+  // YouTubePlayer mounts the iframe wherever `container` actually is.
+  it('createCore builds the core with { container: el.shadowRoot }, not the element itself', () => {
+    const captured: unknown[] = [];
+    (PlayerFactory.create as jest.Mock).mockImplementation((({ container }: any) => {
+      captured.push(container);
+      return fakePlayer();
+    }) as any);
+
+    const el = createElement();
+    document.body.appendChild(el);
+    el.src = 'https://www.youtube.com/watch?v=VIDEO_ID12';
+
+    // Compared as booleans, not `expect(x).toBe(domNode)` directly - a
+    // failed identity match on a live jsdom node crashes Jest's diff
+    // formatter (circular ownerDocument references) instead of just
+    // failing the assertion.
+    expect(captured).toHaveLength(1);
+    expect(captured[0] === el.shadowRoot).toBe(true);
+    expect(captured[0] === el).toBe(false);
+
+    el.remove();
+  });
+});
+
+describe('UltraMediaElement removing src tears playback down (cycle 2, defect 1)', () => {
+  // applySrcChange used to bail out early with a console.warn whenever `src`
+  // was falsy, before ever reaching the core - removeAttribute('src') (or
+  // `el.src = ''`) left the active player/downloads running. Restored
+  // behavior: an empty/removed src destroys the core, exactly like the
+  // public destroy() method, and the element stays reusable afterwards.
+  it('removeAttribute("src") destroys the active player, and a later src resumes playback', () => {
+    const created = trackingPlayerFactory();
+    const el = createElement();
+    document.body.appendChild(el);
+
+    el.src = 'https://example.com/a.m3u8';
+    expect(created).toHaveLength(1);
+    const firstPlayer = created[0].player;
+
+    el.removeAttribute('src');
+
+    expect(firstPlayer.destroy).toHaveBeenCalledTimes(1);
+
+    el.src = 'https://example.com/b.m3u8';
+    expect(created).toHaveLength(2);
+    expect(created[1].src).toBe('https://example.com/b.m3u8');
+
+    el.remove();
+  });
+
+  it('el.src = "" also destroys the active player', () => {
+    const created = trackingPlayerFactory();
+    const el = createElement();
+    document.body.appendChild(el);
+
+    el.src = 'https://example.com/a.mp4';
+    const firstPlayer = created[0].player;
+
+    el.src = '';
+
+    expect(firstPlayer.destroy).toHaveBeenCalledTimes(1);
+    el.remove();
+  });
+
+  it('removing src when no player was ever created is a harmless no-op', () => {
+    const el = createElement();
+    document.body.appendChild(el);
+
+    expect(() => el.removeAttribute('src')).not.toThrow();
 
     el.remove();
   });

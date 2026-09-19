@@ -29,10 +29,12 @@ describe('YouTubePlayer', () => {
 
   it('should call load and create an iframe in the container', async () => {
     const element = createVideoElement();
-    // The player appends the iframe to the container's shadow root (real
-    // usage passes the <ultra-media> custom element, which always has one).
+    // ADR-0001: this file is imported by UltraMediaCore, which must not
+    // depend on Shadow DOM - the iframe is a plain child of whatever
+    // `container` Node is given (any Node with appendChild; real
+    // <ultra-media> usage passes its own shadow root - see the "container
+    // can be a ShadowRoot" test below, cycle 2 defect 2).
     const container = document.createElement('div');
-    container.attachShadow({ mode: 'open' });
     const player = new YouTubePlayer(element, container);
 
     // Mock the YT.Player constructor
@@ -47,9 +49,75 @@ describe('YouTubePlayer', () => {
     player.load('https://www.youtube.com/watch?v=VIDEO_ID123');
     await player.onReady;
 
-    expect(container.shadowRoot?.querySelector('iframe')).not.toBeNull();
+    expect(container.querySelector('iframe')).not.toBeNull();
     expect(element.querySelector('iframe')).toBeNull();
     expect(window.YT.Player).toHaveBeenCalled();
+  });
+
+  // The player hides the native <video> behind its iframe, so it - not the
+  // core - owns undoing exactly that write, against the value it found when
+  // it hid the element (not a constructor-time snapshot).
+  async function loadedPlayer(element: HTMLVideoElement) {
+    const container = document.createElement('div');
+    const player = new YouTubePlayer(element, container);
+    window.YT.Player = jest.fn().mockImplementation(() => ({
+      playVideo: jest.fn(), pauseVideo: jest.fn(), destroy: jest.fn(),
+    }));
+    player.load('https://www.youtube.com/watch?v=VIDEO_ID123');
+    await player.onReady;
+    return player;
+  }
+
+  it("restores the host's inline display on destroy()", async () => {
+    const element = createVideoElement();
+    element.setAttribute('style', 'display: block;');
+    const player = await loadedPlayer(element);
+    expect(element.style.display).toBe('none');
+
+    player.destroy();
+    expect(element.style.display).toBe('block');
+  });
+
+  it('leaves no style attribute behind on an element that had none', async () => {
+    const element = createVideoElement();
+    const player = await loadedPlayer(element);
+    expect(element.style.display).toBe('none');
+
+    player.destroy();
+    expect(element.hasAttribute('style')).toBe(false);
+  });
+
+  it('keeps a display value the host set while the iframe was shown', async () => {
+    const element = createVideoElement();
+    const player = await loadedPlayer(element);
+
+    element.style.display = 'flex';
+    player.destroy();
+    expect(element.style.display).toBe('flex');
+  });
+
+  // cycle 2, defect 2: the real <ultra-media> shell passes its own shadow
+  // root as `container` (not itself) so the iframe never becomes an
+  // observable child of the host element (el.children, page CSS/selectors,
+  // conflicts with slotted <track>s) - a ShadowRoot is a Node with
+  // appendChild, not an HTMLElement, so `container`'s type must accept it.
+  it('accepts a ShadowRoot as container and mounts the iframe inside it, not the host element', async () => {
+    const element = createVideoElement();
+    const host = document.createElement('div');
+    const shadowRoot = host.attachShadow({ mode: 'open' });
+    const player = new YouTubePlayer(element, shadowRoot);
+
+    window.YT.Player = jest.fn().mockImplementation(() => ({
+      playVideo: jest.fn(),
+      pauseVideo: jest.fn(),
+      destroy: jest.fn(),
+    }));
+
+    player.load('https://www.youtube.com/watch?v=VIDEO_ID123');
+    await player.onReady;
+
+    expect(shadowRoot.querySelector('iframe')).not.toBeNull();
+    expect(host.children).toHaveLength(0);
   });
 
   it('should dispatch play and pause events on the element', async () => {
@@ -135,7 +203,6 @@ describe('YouTubePlayer cancels stale sources while the IFrame API is still load
     await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
       const element = createVideoElement();
       const container = document.createElement('div');
-      container.attachShadow({ mode: 'open' });
       const player = new FreshYouTubePlayer(element, container);
 
       player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
@@ -153,7 +220,6 @@ describe('YouTubePlayer cancels stale sources while the IFrame API is still load
     await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
       const element = createVideoElement();
       const container = document.createElement('div');
-      container.attachShadow({ mode: 'open' });
       const player = new FreshYouTubePlayer(element, container);
 
       player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
@@ -171,7 +237,6 @@ describe('YouTubePlayer cancels stale sources while the IFrame API is still load
     await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
       const element = createVideoElement();
       const container = document.createElement('div');
-      container.attachShadow({ mode: 'open' });
       const player = new FreshYouTubePlayer(element, container);
 
       player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
@@ -181,7 +246,7 @@ describe('YouTubePlayer cancels stale sources while the IFrame API is still load
       await player.onReady;
 
       expect(created).toEqual([]);
-      expect(container.shadowRoot?.querySelector('iframe')).toBeNull();
+      expect(container.querySelector('iframe')).toBeNull();
     });
   });
 });

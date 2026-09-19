@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals';
 import { HlsPlayer } from '../src/players/hls-player';
+import { VideoPlayer } from '../src/players/video-player';
 
 function createVideoElement(): HTMLVideoElement {
   return document.createElement('video');
@@ -124,6 +125,20 @@ describe('HlsPlayer native <video> error forwarding', () => {
     });
   });
 
+  // A new load resets `element.error` to null, so an `error` event still
+  // queued for the superseded source arrives with no MediaError - it must
+  // not be reported as the current load's failure.
+  it('ignores a stale native error event that carries no MediaError', async () => {
+    const { player, nativeEl } = await setupPlayerWithErrorHandler();
+    const onError = jest.fn();
+    player.onError(onError);
+
+    Object.defineProperty(nativeEl, 'error', { value: null, configurable: true });
+    nativeEl.dispatchEvent(new Event('error'));
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it('stops listening for the native error once destroyed (no spurious event on teardown)', async () => {
     const { player, nativeEl } = await setupPlayerWithErrorHandler();
     const onError = jest.fn();
@@ -224,6 +239,90 @@ describe('HlsPlayer cancellation (destroy()/rapid src swap during SDK load)', ()
 
       expect(loadSource).toHaveBeenCalledTimes(1);
       expect(loadSource).toHaveBeenCalledWith('https://example.com/c.m3u8');
+    });
+  });
+});
+
+// Chromium never takes this branch (no native HLS support), so this is
+// unit-only: simulates Safari/older Smart TVs, where hls.js reports
+// `Hls.isSupported() === false` (no MSE) but the <video> can still play HLS
+// natively (`canPlayType('application/vnd.apple.mpegurl')` truthy) -
+// applyLoad()'s `else if` branch, which sets `nativeEl.src` directly and
+// bypasses hls.js entirely. destroy() only ever called `hls.destroy()`,
+// which has no idea that src was set outside its own API - the native
+// <video> kept the source and kept downloading (cycle 3, defect 2).
+async function setupNativeFallbackPlayer(): Promise<{ player: HlsPlayer; nativeEl: HTMLVideoElement }> {
+  (window as any).Hls = jest.fn().mockImplementation(() => ({
+    attachMedia: jest.fn(),
+    on: jest.fn(),
+    loadSource: jest.fn(),
+    destroy: jest.fn(),
+  }));
+  (window as any).Hls.Events = { ERROR: 'hlsError', MANIFEST_PARSED: 'hlsManifestParsed' };
+  (window as any).Hls.isSupported = jest.fn().mockReturnValue(false);
+
+  const nativeEl = createVideoElement();
+  nativeEl.canPlayType = jest.fn().mockReturnValue('maybe');
+  const player = new HlsPlayer(nativeEl);
+  await player.onReady;
+  player.load('https://example.com/master.m3u8');
+
+  return { player, nativeEl };
+}
+
+describe('HlsPlayer native HLS fallback (no MSE) teardown (cycle 3, defect 2)', () => {
+  afterEach(() => {
+    delete (window as any).Hls;
+  });
+
+  it('load() on the native fallback path sets the native src directly (no hls.js loadSource)', async () => {
+    const { nativeEl } = await setupNativeFallbackPlayer();
+    expect(nativeEl.getAttribute('src')).toBe('https://example.com/master.m3u8');
+  });
+
+  it('destroy() removes the native src, stopping the <video> from downloading it', async () => {
+    const { player, nativeEl } = await setupNativeFallbackPlayer();
+    expect(nativeEl.hasAttribute('src')).toBe(true);
+
+    player.destroy();
+
+    expect(nativeEl.hasAttribute('src')).toBe(false);
+  });
+
+  it('destroy() on the native fallback path emits no spurious error', async () => {
+    const { player } = await setupNativeFallbackPlayer();
+    const onError = jest.fn();
+    player.onError(onError);
+
+    player.destroy();
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('switching from the HLS-native fallback to another engine leaves no stale src behind', async () => {
+    const { player, nativeEl } = await setupNativeFallbackPlayer();
+
+    player.destroy();
+    const videoPlayer = new VideoPlayer(nativeEl);
+    videoPlayer.load('https://example.com/video.mp4');
+
+    expect(nativeEl.getAttribute('src')).toBe('https://example.com/video.mp4');
+  });
+
+  it('destroy() before the SDK finishes loading never sets a native src, even when it resolves unsupported', async () => {
+    await withDeferredHlsPlayer(async ({ HlsPlayer: FreshHlsPlayer, HlsCtor, resolve }) => {
+      HlsCtor.isSupported = jest.fn().mockReturnValue(false);
+      const nativeEl = createVideoElement();
+      nativeEl.canPlayType = jest.fn().mockReturnValue('maybe');
+      const player = new FreshHlsPlayer(nativeEl);
+      player.load('https://example.com/a.m3u8');
+      player.destroy();
+
+      resolve();
+      await player.onReady;
+
+      expect(nativeEl.hasAttribute('src')).toBe(false);
+      expect(HlsCtor).not.toHaveBeenCalled();
     });
   });
 });

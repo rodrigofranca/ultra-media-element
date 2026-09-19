@@ -81,13 +81,14 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   public onReady: Promise<void>;
   private player: any; // YT.Player
   private iframe: HTMLIFrameElement | null = null;
-  private container: HTMLElement;
+  private container: Node;
   private timeUpdateInterval: any;
   private progressInterval: any;
   private isLoaded = false;
   private lastCurrentTime = 0;
   private seeking = false;
   private isDestroyed = false;
+  private hiddenDisplay: { value: string; hadStyleAttribute: boolean } | null = null;
   private errorCallback?: (error: MediaPlayerError) => void;
   private currentSrc = '';
   // Bumped by every load(). Each load() registers its own
@@ -108,7 +109,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   // Property descriptors backup for restoration
   private originalDescriptors: Map<string, PropertyDescriptor> = new Map();
 
-  constructor(private element: HTMLMediaElement, container: HTMLElement) {
+  constructor(private element: HTMLMediaElement, container: Node) {
     this.container = container;
     this.onReady = loadYouTubeAPI();
 
@@ -344,7 +345,12 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
         this.isDestroyed = false; // reset: destroy interno para recarga, não cancelamento
       }
 
-      // Hide the original video element
+      // Hide the original video element, remembering what was there so
+      // destroy() can put it back (see restoreElementDisplay()).
+      this.hiddenDisplay = {
+        value: this.element.style.display,
+        hadStyleAttribute: this.element.hasAttribute('style'),
+      };
       this.element.style.display = 'none';
 
       this.iframe = document.createElement('iframe');
@@ -358,8 +364,18 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
       this.iframe.allowFullscreen = true;
       this.iframe.src = `https://www.youtube.com/embed/${videoId}?controls=0&preload=metadata&enablejsapi=1&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1`;
 
-      // this.container.shadowRoot?.removeChild(this.element);
-      this.container.shadowRoot?.appendChild(this.iframe);
+      // A plain `container.appendChild` - this file is imported by
+      // UltraMediaCore (ADR-0001), which must not depend on Shadow DOM (the
+      // headless target may have none at all) or know what kind of Node
+      // `container` is. `container` is just whatever was passed to
+      // `new UltraMediaCore(media, { container })`: the <ultra-media> shell
+      // passes its own shadow root (a ShadowRoot - a Node with
+      // appendChild, not Shadow-DOM-specific behavior on this class's
+      // part) so the iframe lands inside the shadow tree, sibling to
+      // <video>, instead of the element's observable light DOM (see
+      // result-cycle2.md, defect 2) - a bare `<video>`/no-element consumer
+      // can pass any other Node (or omit it, for non-YouTube sources).
+      this.container.appendChild(this.iframe);
 
       if (!this.iframe) {
         return;
@@ -412,8 +428,22 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
       this.iframe = null;
     }
 
-    // Restore the original video element's display
-    this.element.style.display = '';
+    this.restoreElementDisplay();
+  }
+
+  // Undo exactly the write load() made: only while the element is still
+  // hidden by us (a value the host set meanwhile wins), back to the inline
+  // value found at hide time, and without leaving an empty `style=""` on an
+  // element that had no style attribute.
+  private restoreElementDisplay(): void {
+    const hidden = this.hiddenDisplay;
+    this.hiddenDisplay = null;
+    if (!hidden || this.element.style.display !== 'none') return;
+
+    this.element.style.display = hidden.value;
+    if (!hidden.hadStyleAttribute && this.element.getAttribute('style') === '') {
+      this.element.removeAttribute('style');
+    }
   }
 
   private onPlayerReady(): void {

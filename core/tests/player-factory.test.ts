@@ -4,6 +4,7 @@ import { VideoPlayer } from "../src/players/video-player";
 import { HlsPlayer } from "../src/players/hls-player";
 import { YouTubePlayer } from '../src/players/youtube-player';
 import { Format } from "../src/core/format";
+import type { MediaPlayerError } from "../src/core/media-player";
 
 function createVideoElement(): HTMLVideoElement {
   return document.createElement("video");
@@ -82,5 +83,54 @@ describe("PlayerFactory", () => {
         formats: { [Format.MP4]: "unknown/engine" },
       })
     ).toThrow("No engine registered for: unknown/engine");
+  });
+
+  // cycle 2, defect 8: a YouTube source with no `container` used to throw
+  // synchronously out of create() - a codepath UltraMediaCore.load() never
+  // wraps in try/catch, so it escaped as an uncaught exception instead of
+  // going through the normal fatal-error routing every other engine uses.
+  // It must behave like any other fatal failure instead: no throw, a
+  // player whose onReady rejects and whose onError reports the same
+  // MediaPlayerError shape (both consumed by UltraMediaCore.wireUp()).
+  it("a YouTube source with no container does not throw - onReady rejects and onError reports a fatal CONTAINER_REQUIRED error", async () => {
+    const element = createVideoElement();
+
+    let player: ReturnType<typeof PlayerFactory.create> | undefined;
+    expect(() => {
+      player = PlayerFactory.create({
+        src: "https://www.youtube.com/watch?v=VIDEO_ID12",
+        element,
+      });
+    }).not.toThrow();
+
+    const reported: MediaPlayerError[] = [];
+    player!.onError?.((error) => reported.push(error));
+
+    await expect(player!.onReady).rejects.toMatchObject({ fatal: true, code: 'CONTAINER_REQUIRED', engine: 'youtube' });
+    expect(reported).toEqual([
+      expect.objectContaining({ fatal: true, code: 'CONTAINER_REQUIRED', engine: 'youtube' }),
+    ]);
+  });
+
+  // cycle 3, defect 1: create() used to write `element.dataset.type` as its
+  // only way to report the resolved engine back to UltraMediaCore - on a
+  // <video> owned by a host, that clobbered any `data-type` attribute the
+  // host already had for its own purposes. resolveEngine() (exposed below)
+  // lets a caller learn the same resolution without touching the DOM at
+  // all, so create() no longer needs to write anything there.
+  it("does not write a data-type attribute on the element - engine identity never touches the DOM", () => {
+    const element = createVideoElement();
+    element.dataset.type = 'do-host';
+
+    PlayerFactory.create({ src: "https://example.com/video.mp4", element });
+
+    expect(element.dataset.type).toBe('do-host');
+  });
+
+  it("resolveEngine() returns the same engine name create() would pick, without creating a player", () => {
+    expect(PlayerFactory.resolveEngine("https://example.com/video.mp4")).toBe('video/mp4');
+    expect(PlayerFactory.resolveEngine("https://example.com/video.m3u8")).toBe('hls.js');
+    expect(PlayerFactory.resolveEngine("https://example.com/video.mpd")).toBe('dash.js');
+    expect(PlayerFactory.resolveEngine("https://www.youtube.com/watch?v=VIDEO_ID", undefined, Format.YOUTUBE)).toBe('youtube');
   });
 });

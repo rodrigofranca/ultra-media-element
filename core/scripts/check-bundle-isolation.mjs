@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 
 const FORBIDDEN_MARKERS = ['ima-ad-player', 'imasdk', 'ultra-media-ad'];
-const CORE_BUNDLES = ['dist/ultra-media.es.js', 'dist/ultra-media.umd.js'];
+const CORE_BUNDLES = ['dist/ultra-media.es.js', 'dist/ultra-media.umd.cjs'];
 
 let failed = false;
 
@@ -25,7 +25,8 @@ for (const file of CORE_BUNDLES) {
 
 if (failed) {
   console.error('\nThe core bundle must not contain ad code. See AGENTS.md / README.md "Entry points".');
-  process.exit(1);
+  // exitCode, not process.exit(): exit() can drop stderr still buffered on a pipe.
+  process.exitCode = 1;
+} else {
+  console.log('bundle isolation OK: core bundles contain no ad code');
 }
-
-console.log('bundle isolation OK: core bundles contain no ad code');

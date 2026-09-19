@@ -1,5 +1,5 @@
 import { test, expect } from '../utils/hermetic';
-import { gotoPlayer, setSrc, instrument, getLog, resetLog, callMethod, getProp } from '../utils/media';
+import { gotoPlayer, setSrc, instrument, getLog, resetLog, callMethod, getProp, videoRenditions } from '../utils/media';
 
 // Slows each segment response so a 4s VOD clip doesn't finish buffering
 // before we can remove the element and observe whether requests stop.
@@ -129,6 +129,47 @@ test.describe('cleanup on removal', () => {
 
       await expect.poll(async () => (await getProp(page, 'currentTime')) as number, { timeout: 10_000 }).toBeGreaterThan(timeBeforeMove);
       expect(manifestRequests.length).toBe(countBeforeMove);
+      expect((await getLog(page)).some((e) => e.name === 'error')).toBe(false);
+    });
+  }
+});
+
+test.describe('removeAttribute("src") tears playback down (cycle 2, defect 1)', () => {
+  for (const { engine, fixture, segmentGlob } of CASES) {
+    test(`removeAttribute("src") stops segment downloads, resets the <video>, clears renditions, and a new src resumes playback (${engine})`, async ({ page }) => {
+      await gotoPlayer(page);
+      await instrument(page);
+      const requests = await trackSegmentRequests(page, segmentGlob);
+      await setSrc(page, fixture);
+
+      await expect.poll(() => requests.length, { timeout: 10_000 }).toBeGreaterThan(0);
+      await expect.poll(async () => (await videoRenditions(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
+
+      await page.evaluate(() => document.querySelector('#player')!.removeAttribute('src'));
+      const countAtRemoval = requests.length;
+
+      // Proving a *negative* (no more requests) needs a fixed real-time
+      // observation window, not an event to poll for - see cleanup.spec.ts
+      // above for the same pattern.
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      expect(requests.length).toBe(countAtRemoval);
+
+      // Descoberta (result-cycle2.md): `nativeEl.currentSrc` is sticky in
+      // Chromium - `removeAttribute('src') + load()` (what every engine's
+      // teardown does, including native VideoPlayer/AudioPlayer) resets
+      // networkState/readyState to empty/nothing (verified independently of
+      // this codebase, on a bare <video>) but does NOT clear `currentSrc`
+      // back to '' - only selecting a *new* source does. networkState/
+      // readyState are the real, reliably-observable "no source" signal.
+      expect(await getProp(page, 'networkState')).toBe(0); // NETWORK_EMPTY
+      expect(await getProp(page, 'readyState')).toBe(0); // HAVE_NOTHING
+      expect(await videoRenditions(page)).toEqual([]);
+
+      await resetLog(page);
+      await setSrc(page, fixture);
+      await expect.poll(async () => (await getLog(page)).some((e) => e.name === 'loadedmetadata'), { timeout: 10_000 }).toBe(true);
+      await callMethod(page, 'play');
+      await expect.poll(async () => (await getProp(page, 'currentTime')) as number, { timeout: 10_000 }).toBeGreaterThan(0.3);
       expect((await getLog(page)).some((e) => e.name === 'error')).toBe(false);
     });
   }
