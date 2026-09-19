@@ -3,6 +3,7 @@
   "version": "0.0.3",
   "description": "",
   "type": "module",
+  "packageManager": "pnpm@11.15.1",
   "exports": {
     ".": {
       "import": "./dist/ultra-media.es.js"
@@ -41,8 +42,8 @@
     "@types/jest": "^29.5.14",
     "cem-plugin-vs-code-custom-data-generator": "^1.4.2",
     "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "jsdom": "^26.1.0",
-    "media-tracks": "^0.3.3",
     "ts-jest": "^29.3.4",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
