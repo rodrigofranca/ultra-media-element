@@ -309,7 +309,6 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     });
 
     this.originalDescriptors.clear();
-    console.log('YouTubePlayer: Proxy cleanup completed');
   }
 
   onError(callback: (error: MediaPlayerError) => void): void {
