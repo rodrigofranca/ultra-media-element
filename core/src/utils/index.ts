@@ -11,12 +11,12 @@ export const delay = (time: number) => {
     setTimeout(res, time);
   });
 };
-export function serialize(props) {
-  return String(new URLSearchParams(boolToBinary(props)));
+export function serialize(props: Record<string, unknown>) {
+  return String(new URLSearchParams(boolToBinary(props) as Record<string, string>));
 }
 
-function boolToBinary(props) {
-  let p = {};
+function boolToBinary(props: Record<string, unknown>): Record<string, unknown> {
+  let p: Record<string, unknown> = {};
   for (let key in props) {
     let val = props[key];
     if (val === true || val === '') p[key] = 1;
@@ -26,7 +26,7 @@ function boolToBinary(props) {
   return p;
 }
 
-export function serializeIframeUrl(attrs) {
+export function serializeIframeUrl(attrs: Record<string, any>) {
   if (!attrs.src) return;
 
   const matches = attrs.src.match(MATCH_SRC);

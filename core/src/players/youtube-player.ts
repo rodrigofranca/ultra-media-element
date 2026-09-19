@@ -1,4 +1,5 @@
 import type { IMediaPlayer } from "../core/media-player";
+import { YOUTUBE_IFRAME_API_URL } from "../core/sdk-config";
 
 class TimeRanges {
   private ranges: [number, number][];
@@ -23,29 +24,33 @@ class TimeRanges {
   }
 }
 
-const API_URL = 'https://www.youtube.com/iframe_api';
+const API_URL = YOUTUBE_IFRAME_API_URL;
 const API_GLOBAL = 'YT';
 const API_GLOBAL_READY = 'onYouTubeIframeAPIReady';
 
 // Regex to extract video ID from YouTube URLs
 const MATCH_SRC = /(?:youtu\.be\/|youtube\.com\/(?:shorts\/|embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})/;
 
-let apiLoaded: Promise<any> | null = null;
+let apiLoaded: Promise<void> | null = null;
 
-function loadYouTubeAPI() {
+function loadYouTubeAPI(): Promise<void> {
   if (!apiLoaded) {
-    apiLoaded = new Promise((resolve) => {
+    apiLoaded = new Promise<void>((resolve) => {
       if (window[API_GLOBAL] && window[API_GLOBAL].Player) {
-        return resolve(window[API_GLOBAL]);
+        return resolve();
       }
 
       const script = document.createElement('script');
       script.src = API_URL;
       window[API_GLOBAL_READY] = () => {
-        resolve(window[API_GLOBAL]);
+        resolve();
       };
       const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode?.insertBefore(script, firstScriptTag);
+      if (firstScriptTag?.parentNode) {
+        firstScriptTag.parentNode.insertBefore(script, firstScriptTag);
+      } else {
+        (document.head ?? document.documentElement).appendChild(script);
+      }
     });
   }
   return apiLoaded;
@@ -287,6 +292,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     });
 
     this.originalDescriptors.clear();
+    console.log('YouTubePlayer: Proxy cleanup completed');
   }
 
   load(src: string): void {
