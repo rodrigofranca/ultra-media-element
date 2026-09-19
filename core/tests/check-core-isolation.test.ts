@@ -109,6 +109,29 @@ describe('check-core-isolation.mjs: forbidden-global markers (cycle 3, defect 4)
       expect(status).toBe(0);
     });
 
+    // The exemption is for Rollup's UMD header only - the same guarded
+    // expression anywhere else is our own code reaching for globalThis.
+    it('flags the guarded idiom when it appears in the ES bundle (there is no UMD wrapper there)', () => {
+      writeBundles(
+        tmpDir,
+        'export class UltraMediaCore {}\nconst g = typeof globalThis!="undefined"?globalThis:self;\n',
+        'var ok = 1;\n'
+      );
+      const { status, output } = runGuard(tmpDir);
+      expect(status).toBe(1);
+      expect(output).toContain('globalThis');
+      expect(output).toContain('ultra-media-core.es.js');
+    });
+
+    it('flags the guarded idiom in the UMD bundle when it is outside the wrapper header', () => {
+      const header = '(function(g,f){typeof exports=="object"?f(exports):(g=typeof globalThis!="undefined"?globalThis:g||self,f(g.x={}))})(this,function(x){';
+      const body = `${'var pad=0;'.repeat(80)}var mine=typeof globalThis!="undefined"?globalThis:self;`;
+      writeBundles(tmpDir, 'export class UltraMediaCore {}\n', `${header}${body}});\n`);
+      const { status, output } = runGuard(tmpDir);
+      expect(status).toBe(1);
+      expect(output).toContain('ultra-media-core.umd.cjs');
+    });
+
     it('flags an unguarded globalThis reference (not immediately preceded by typeof)', () => {
       writeBundles(tmpDir, 'export class UltraMediaCore {}\nconst x = globalThis.foo;\n');
       const { status, output } = runGuard(tmpDir);

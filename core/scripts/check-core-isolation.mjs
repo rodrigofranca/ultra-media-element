@@ -50,17 +50,18 @@ function stripComments(source) {
 }
 
 // `globalThis` can't be a plain substring marker: every UMD bundle Rollup
-// emits (including our own ad/element ones, not just /core) carries
-// `typeof globalThis!="undefined"?globalThis:c||self` verbatim as its own
-// environment-detection boilerplate - already exactly the guarded
-// `self`-fallback pattern this rule asks *our* code to use, not a violation
-// of it (both the `typeof` check and the reference it guards use the
-// identifier). Strip that exact idiom first; any `globalThis` left over is
-// a real, unguarded reference our own code introduced.
-const GLOBALTHIS_GUARDED_IDIOM = /typeof\s+globalThis\s*(?:!==?|===?)\s*["']undefined["']\s*\?\s*globalThis\s*:/g;
+// emits carries `typeof globalThis!="undefined"?globalThis:c||self` in its
+// wrapper header as environment-detection boilerplate. That one occurrence -
+// in a UMD file, inside the header - is exempt; the same expression anywhere
+// else (or in the ES bundle, which has no wrapper) is our own code reaching
+// for `globalThis` and is reported like any other reference.
+const GLOBALTHIS_GUARDED_IDIOM = /typeof\s+globalThis\s*(?:!==?|===?)\s*["']undefined["']\s*\?\s*globalThis\s*:/;
+const UMD_HEADER_LENGTH = 400;
 
-function findUnguardedGlobalThis(content) {
-  return content.replace(GLOBALTHIS_GUARDED_IDIOM, '').includes('globalThis');
+function findUnguardedGlobalThis(file, content) {
+  if (!/\.umd\./.test(file)) return content.includes('globalThis');
+  const header = content.slice(0, UMD_HEADER_LENGTH).replace(GLOBALTHIS_GUARDED_IDIOM, '');
+  return (header + content.slice(UMD_HEADER_LENGTH)).includes('globalThis');
 }
 
 let failed = false;
@@ -73,7 +74,7 @@ for (const file of CORE_BUNDLES) {
       failed = true;
     }
   }
-  if (findUnguardedGlobalThis(content)) {
+  if (findUnguardedGlobalThis(file, content)) {
     console.error(`core isolation violation: unguarded "globalThis" (not "typeof globalThis") found in ${file}`);
     failed = true;
   }
@@ -81,7 +82,9 @@ for (const file of CORE_BUNDLES) {
 
 if (failed) {
   console.error('\nThe headless core bundle must not depend on Custom Elements/Shadow DOM/Mux packages. See ADR-0001 / AGENTS.md.');
-  process.exit(1);
+  // exitCode, not process.exit(): exit() can drop stderr that is still
+  // buffered when the output is a pipe (CI, test runners), losing the report.
+  process.exitCode = 1;
+} else {
+  console.log('core isolation OK: headless core bundles contain no shell/Mux markers');
 }
-
-console.log('core isolation OK: headless core bundles contain no shell/Mux markers');
