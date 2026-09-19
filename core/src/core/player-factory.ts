@@ -12,6 +12,8 @@ export type PlayerFactoryProps = {
   element: HTMLMediaElement;
   container?: HTMLElement;
   formats?: AvailableFormats;
+  /** Explicit format override - skips detectFormat(src). Used by UltraMediaCore.load({ src, type }). */
+  format?: Format;
 };
 
 const DEFAULT_FORMATS: AvailableFormats = {
@@ -50,8 +52,8 @@ export function getCurrentFormatFromElement(el: HTMLMediaElement): Format | unde
 }
 
 export class PlayerFactory {
-  static create({ src, element, container, formats }: PlayerFactoryProps): IMediaPlayer {
-    const engineType = this.resolveEngine(src, formats ?? DEFAULT_FORMATS);
+  static create({ src, element, container, formats, format }: PlayerFactoryProps): IMediaPlayer {
+    const engineType = this.resolveEngine(src, formats ?? DEFAULT_FORMATS, format);
     const engine = engines.get(engineType);
 
     if (!engine) {
@@ -74,8 +76,8 @@ export class PlayerFactory {
     return player;
   }
 
-  private static resolveEngine(src: string, formats: AvailableFormats): string {
-    const format = detectFormat(src);
+  private static resolveEngine(src: string, formats: AvailableFormats, explicitFormat?: Format): string {
+    const format = explicitFormat ?? detectFormat(src);
 
     if (!format) {
       throw new Error(`Unsupported media source: ${src}`);
