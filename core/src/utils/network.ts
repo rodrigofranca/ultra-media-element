@@ -100,7 +100,11 @@ export const loadScript = (
   script.onload = onLoad;
   script.onerror = onError as any;
   const firstScriptTag = document.getElementsByTagName('script')[0];
-  firstScriptTag.parentNode?.insertBefore(script, firstScriptTag);
+  if (firstScriptTag?.parentNode) {
+    firstScriptTag.parentNode.insertBefore(script, firstScriptTag);
+  } else {
+    (document.head ?? document.documentElement).appendChild(script);
+  }
 };
 
 export function loadDependency(url: string, globalVariable = '', force = false) {
