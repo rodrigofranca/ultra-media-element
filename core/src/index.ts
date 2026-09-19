@@ -1,17 +1,7 @@
-import { UltraMediaAd } from './ultra-media-ad';
 import { UltraMediaElement } from './ultra-media-element';
+import { registerCustomElement } from './utils/register-custom-element';
 
-const registerCustomElements = (tag: string, constructor: any) => {
-  if (
-    globalThis.customElements &&
-    !globalThis.customElements.get(tag)
-  ) {
-    globalThis.customElements.define(tag, constructor);
-  }
-}
-
-registerCustomElements('ultra-media', UltraMediaElement);
-registerCustomElements('ultra-media-ad', UltraMediaAd);
+registerCustomElement('ultra-media', UltraMediaElement);
 
 export type { UltraMediaElement };
 export type { MediaPlayerError } from './core/media-player';
