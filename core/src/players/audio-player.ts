@@ -12,6 +12,7 @@ export class AudioPlayer implements IMediaPlayer {
   }
 
   destroy(): void {
-    this.element.src = '';
+    this.element.removeAttribute('src');
+    this.element.load();
   }
 }

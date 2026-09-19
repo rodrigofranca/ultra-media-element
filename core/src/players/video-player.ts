@@ -32,6 +32,12 @@ export class VideoPlayer implements IMediaPlayer {
     if (this.errorHandler) {
       this.element.removeEventListener('error', this.errorHandler);
     }
-    this.element.src = '';
+    // `element.src = ''` is itself a valid (if unusual) source per the HTML
+    // spec and fires a real `error` event - removeAttribute + load() lets
+    // the resource selection algorithm see there is nothing to load and
+    // reset to NETWORK_EMPTY silently instead (see result.md "decisões de
+    // design").
+    this.element.removeAttribute('src');
+    this.element.load();
   }
 }
