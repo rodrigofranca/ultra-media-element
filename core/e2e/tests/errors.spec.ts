@@ -99,4 +99,32 @@ test.describe('error handling', () => {
     expect(detail.message).toBeTruthy();
     // pageErrors fixture (hermetic.ts) asserts no unhandled exception on teardown.
   });
+
+  // (d) A DASH media segment that fails on *every* request (not just once,
+  // unlike (b)'s HLS case) is unrecoverable: dash.js's HTTPLoader only
+  // raises DOWNLOAD_ERROR_ID_CONTENT/INITIALIZATION_CODE once its own
+  // internal retry budget for that resource (default: 3 retries, 1s apart -
+  // mediaPlayerModel's retryAttempts/retryIntervals, read out of
+  // dash.all.debug.js) is exhausted - by then playback is genuinely stuck,
+  // so this must reach the element as `error`, fatal:true (see dash-player.
+  // ts's isDashErrorRecoverable comment). expect.poll's timeout below
+  // accounts for that ~3s retry window plus request overhead.
+  test('(d) a DASH media segment failing on every request emits a fatal error', async ({ page }) => {
+    await gotoPlayer(page);
+    await instrument(page);
+
+    await page.route('**/fixtures/dash/chunk-*.m4s', async (route) => {
+      await route.fulfill({ status: 500, contentType: 'text/plain', body: 'Internal Server Error' });
+    });
+
+    await setSrc(page, '/fixtures/dash/manifest.mpd');
+
+    await expect.poll(async () => (await getLog(page)).some((e) => e.name === 'error'), { timeout: 15_000 }).toBe(true);
+
+    const errorEvent = (await getLog(page)).find((e) => e.name === 'error');
+    const detail = errorEvent?.detail as Record<string, unknown>;
+    expect(detail).toMatchObject({ fatal: true, engine: 'dash.js' });
+    expect(detail.category).toBeTruthy();
+    expect(detail.code).toBeTruthy();
+  });
 });
