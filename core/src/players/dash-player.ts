@@ -49,11 +49,23 @@ function categorizeDashError(code: number | null, errors: any): MediaErrorCatego
   return 'otherError';
 }
 
-// Codes for a single resource (one segment/init segment/sidx/UTC timing
-// source, or a non-fatal timed-text parse issue) that dash.js's own
-// retry/ABR machinery can route around without stopping playback.
-// Anything not in this list (manifest/MSE/capability failures, and any
-// code dash.js adds in the future) defaults to fatal.
+// Codes for a single resource that dash.js's own retry/ABR machinery can
+// route around without stopping playback. Anything not in this list
+// (manifest/MSE/capability failures, and any code dash.js adds in the
+// future) defaults to fatal.
+//
+// DOWNLOAD_ERROR_ID_SIDX_CODE/CONTENT_CODE/INITIALIZATION_CODE (26/27/28)
+// are deliberately NOT here, unlike the other single-resource codes: dash.js
+// only raises them through HTTPLoader's `_retriggerRequest` once its own
+// internal retry budget (mediaPlayerModel.getRetryAttemptsForType) is
+// already exhausted (node_modules/dashjs/dist/modern/umd/dash.all.debug.js
+// ~60075-60102, `downloadErrorToRequestTypeMap` ~59856-59863) - by the time
+// this event reaches us, dash.js itself has given up on that
+// segment/init-segment/sidx and playback is stalled, not routing around it.
+// The other codes below (SEGMENT_BASE_LOADER, TIME_SYNC, FRAGMENT_LOADER,
+// URL_RESOLUTION, TIMED_TEXT parse) come from different, single-shot code
+// paths with no such exhausted-retry precondition, so they keep their
+// original recoverable classification.
 function isDashErrorRecoverable(code: number | null, errors: any): boolean {
   if (code == null) return false;
 
@@ -63,9 +75,6 @@ function isDashErrorRecoverable(code: number | null, errors: any): boolean {
     errors.FRAGMENT_LOADER_LOADING_FAILURE_ERROR_CODE,
     errors.FRAGMENT_LOADER_NULL_REQUEST_ERROR_CODE,
     errors.URL_RESOLUTION_FAILED_GENERIC_ERROR_CODE,
-    errors.DOWNLOAD_ERROR_ID_SIDX_CODE,
-    errors.DOWNLOAD_ERROR_ID_CONTENT_CODE,
-    errors.DOWNLOAD_ERROR_ID_INITIALIZATION_CODE,
     errors.TIMED_TEXT_ERROR_ID_PARSE_CODE,
   ].includes(code);
 }
@@ -90,6 +99,14 @@ export class DashPlayer implements IMediaPlayer {
   private errorCallback?: (error: MediaPlayerError) => void;
   private audioTracks: any[] = [];
   private videoRepresentations: any[] = [];
+  // Same cancellation guard as HlsPlayer (see its comments) - checked right
+  // after `loadSDK()` resolves, before `this.dashjs.MediaPlayer().create()`,
+  // so destroy() during the CDN script load stops a dash.js instance from
+  // ever being created instead of creating and orphaning one.
+  private destroyed = false;
+  // Last requested src; queued the same way as HlsPlayer's when `load()` is
+  // called before `this.player` exists yet.
+  private pendingSrc?: string;
 
   constructor(private element: HTMLVideoElement) {
     log("Powered by Dash.js");
@@ -103,6 +120,9 @@ export class DashPlayer implements IMediaPlayer {
     if (isUndefined(this.dashjs)) {
       this.dashjs = await loadSDK(this.sdkSrc, 'dashjs');
     }
+
+    if (this.destroyed) return;
+
     this.player = this.dashjs.MediaPlayer().create();
     this.player.initialize(this.nativeEl, null, true);
     this.player.updateSettings(this.config);
@@ -160,6 +180,14 @@ export class DashPlayer implements IMediaPlayer {
         this.tracksChangeCallback(tracks);
       }
     });
+
+    if (this.pendingSrc) {
+      this.applyLoad(this.pendingSrc);
+    }
+  }
+
+  private applyLoad(src: string) {
+    this.player.attachSource(src);
   }
 
   onTracksChange(callback: (tracks: MediaTracks) => void) {
@@ -187,11 +215,14 @@ export class DashPlayer implements IMediaPlayer {
   }
 
   load(src: string) {
-    if (!this.player) return;
-    this.player.attachSource(src);
+    this.pendingSrc = src;
+    if (this.destroyed || !this.player) return;
+    this.applyLoad(src);
   }
 
   destroy() {
+    this.destroyed = true;
+
     if (this.player) {
       this.player.destroy();
       this.player = null;
