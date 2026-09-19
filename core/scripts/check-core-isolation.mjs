@@ -12,7 +12,29 @@
  */
 import { readFileSync } from 'node:fs';
 
-const FORBIDDEN_MARKERS = ['customElements', 'attachShadow', 'super-media-element', 'media-tracks', 'ResizeObserver', 'new EventTarget('];
+// cycle 3, defect 4: the original list only covered ADR-0001's own examples
+// (Custom Elements/Shadow DOM/Mux packages). Extended with every other
+// ~ES2017-unsafe global the brief called out - none of these exist on the
+// oldest Tizen/webOS runtimes `/core` targets either. `globalThis` itself is
+// deliberately included: the core must use `self`/`window` with a fallback
+// instead (see src/utils/unit.ts). The `#` private-field rule stays out of
+// this list for the same reason as before (hex literals) - covered by
+// tests/core-dependency-guard.test.ts's source-level walk instead.
+const FORBIDDEN_MARKERS = [
+  'customElements',
+  'attachShadow',
+  'super-media-element',
+  'media-tracks',
+  'ResizeObserver',
+  'new EventTarget(',
+  'queueMicrotask',
+  'structuredClone',
+  'IntersectionObserver',
+  'globalThis',
+  'replaceAll',
+  '.at(',
+  'Object.hasOwn',
+];
 const CORE_BUNDLES = ['dist/ultra-media-core.es.js', 'dist/ultra-media-core.umd.cjs'];
 
 let failed = false;

@@ -46,8 +46,11 @@ function containerRequiredPlayer(src: string): IMediaPlayer {
     url: src,
   };
   return {
+    // `queueMicrotask` doesn't exist on the ~ES2017 Smart TV runtimes this
+    // targets (see result-cycle3.md, defect 4) - `Promise.resolve().then()`
+    // schedules on the same microtask queue without it.
     onReady: new Promise((_resolve, reject) => {
-      queueMicrotask(() => {
+      Promise.resolve().then(() => {
         onError?.(error);
         reject(error);
       });
