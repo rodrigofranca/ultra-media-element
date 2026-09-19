@@ -21,8 +21,14 @@ import { detectFormat } from './format-detector';
 export type UltraMediaSource = string | { src: string; type?: Format };
 
 export interface UltraMediaCoreOptions {
+  // A plain Node (not HTMLElement): the shell passes its shadow root (a
+  // ShadowRoot - a Node with appendChild, not an HTMLElement) so the
+  // YouTube iframe lands inside it instead of the element's light DOM (see
+  // result-cycle2.md, defect 2) - the core itself only ever calls
+  // `container.appendChild(...)`, never anything shadow-DOM-specific,
+  // keeping it agnostic to what kind of Node it was given.
   /** Where engines that render outside the <video> (YouTube) mount their view. */
-  container?: HTMLElement;
+  container?: Node;
 }
 
 export type UltraMediaCoreEventType =

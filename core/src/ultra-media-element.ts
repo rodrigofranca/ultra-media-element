@@ -189,20 +189,23 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
 
     if (!src) {
       this.core?.destroy();
-      this.loadedSrc = src;
-      return;
+    } else {
+      if (!this.core) this.core = this.createCore();
+      this.core.load(src);
     }
 
-    if (!this.core) {
-      this.core = this.createCore();
-    }
-
-    this.core.load(src);
     this.loadedSrc = src;
   }
 
   private createCore(): UltraMediaCore {
-    const core = new UltraMediaCore(this.nativeEl, { container: this });
+    // The shadow root, not `this` - keeps the YouTube iframe out of the
+    // element's observable light DOM (el.children, page CSS/selectors,
+    // conflicts with slotted <track>s) while landing in the exact same
+    // visual spot as before: sibling to <video> inside the shadow tree
+    // (see result-cycle2.md, defect 2). Falls back to `this` only for a
+    // shadow-DOM-less test double - by the time nativeEl exists,
+    // super-media-element has always already attached a real shadow root.
+    const core = new UltraMediaCore(this.nativeEl, { container: this.shadowRoot ?? this });
 
     core.addEventListener<MediaPlayerError>('error', (event) => this.forwardCoreEvent('error', event));
     core.addEventListener<MediaPlayerError>('warning', (event) => this.forwardCoreEvent('warning', event));

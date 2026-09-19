@@ -81,7 +81,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   public onReady: Promise<void>;
   private player: any; // YT.Player
   private iframe: HTMLIFrameElement | null = null;
-  private container: HTMLElement;
+  private container: Node;
   private timeUpdateInterval: any;
   private progressInterval: any;
   private isLoaded = false;
@@ -108,7 +108,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   // Property descriptors backup for restoration
   private originalDescriptors: Map<string, PropertyDescriptor> = new Map();
 
-  constructor(private element: HTMLMediaElement, container: HTMLElement) {
+  constructor(private element: HTMLMediaElement, container: Node) {
     this.container = container;
     this.onReady = loadYouTubeAPI();
 
@@ -358,12 +358,17 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
       this.iframe.allowFullscreen = true;
       this.iframe.src = `https://www.youtube.com/embed/${videoId}?controls=0&preload=metadata&enablejsapi=1&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1`;
 
-      // A plain light-DOM append, not `container.shadowRoot.appendChild` -
-      // this file is imported by UltraMediaCore (ADR-0001), which must not
-      // depend on Shadow DOM (the headless target may have none at all).
-      // The <ultra-media> shell passes itself as `container`; its shadow
-      // template's unnamed <slot> re-projects this into the shadow tree, so
-      // the visual result is unchanged - see result.md "mapa do que moveu".
+      // A plain `container.appendChild` - this file is imported by
+      // UltraMediaCore (ADR-0001), which must not depend on Shadow DOM (the
+      // headless target may have none at all) or know what kind of Node
+      // `container` is. `container` is just whatever was passed to
+      // `new UltraMediaCore(media, { container })`: the <ultra-media> shell
+      // passes its own shadow root (a ShadowRoot - a Node with
+      // appendChild, not Shadow-DOM-specific behavior on this class's
+      // part) so the iframe lands inside the shadow tree, sibling to
+      // <video>, instead of the element's observable light DOM (see
+      // result-cycle2.md, defect 2) - a bare `<video>`/no-element consumer
+      // can pass any other Node (or omit it, for non-YouTube sources).
       this.container.appendChild(this.iframe);
 
       if (!this.iframe) {

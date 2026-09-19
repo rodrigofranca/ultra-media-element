@@ -32,6 +32,14 @@ jest.mock('super-media-element', () => ({
   SuperVideoElement: class extends HTMLElement {
     static observedAttributes = ['src'];
     private __nativeEl?: HTMLVideoElement;
+    // The real super-media-element attaches an open shadow root before
+    // nativeEl exists - matched here so createCore()'s `this.shadowRoot ??
+    // this` (cycle 2, defect 2) exercises its real branch, not the
+    // shadow-DOM-less fallback.
+    constructor() {
+      super();
+      this.attachShadow({ mode: 'open' });
+    }
     get nativeEl() {
       if (!this.__nativeEl) this.__nativeEl = document.createElement('video');
       return this.__nativeEl;
@@ -334,6 +342,37 @@ describe('UltraMediaElement src change during a synchronous DOM move (cycle 3, d
     expect(created).toHaveLength(1);
     expect(firstPlayer.load).not.toHaveBeenCalled();
     expect(firstPlayer.destroy).not.toHaveBeenCalled();
+
+    el.remove();
+  });
+});
+
+describe('UltraMediaElement passes its shadow root as the core container (cycle 2, defect 2)', () => {
+  // The core (and YouTubePlayer, imported by it) must never depend on
+  // Shadow DOM itself (ADR-0001) - but the *shell* owns one, and passing
+  // itself as `container` (the old behavior) put the YouTube iframe
+  // directly in the element's light DOM instead. See
+  // core/tests/youtube-player.test.ts for the corresponding proof that
+  // YouTubePlayer mounts the iframe wherever `container` actually is.
+  it('createCore builds the core with { container: el.shadowRoot }, not the element itself', () => {
+    const captured: unknown[] = [];
+    (PlayerFactory.create as jest.Mock).mockImplementation((({ src, element, container }: any) => {
+      element.dataset.type = 'youtube';
+      captured.push(container);
+      return fakePlayer();
+    }) as any);
+
+    const el = createElement();
+    document.body.appendChild(el);
+    el.src = 'https://www.youtube.com/watch?v=VIDEO_ID12';
+
+    // Compared as booleans, not `expect(x).toBe(domNode)` directly - a
+    // failed identity match on a live jsdom node crashes Jest's diff
+    // formatter (circular ownerDocument references) instead of just
+    // failing the assertion.
+    expect(captured).toHaveLength(1);
+    expect(captured[0] === el.shadowRoot).toBe(true);
+    expect(captured[0] === el).toBe(false);
 
     el.remove();
   });

@@ -138,3 +138,34 @@ test.describe('youtube: cancel stale sources while the IFrame API is still loadi
     expect(await getCreated(page)).toEqual([]);
   });
 });
+
+test.describe('youtube: iframe mounts in the shadow root, not the light DOM (cycle 2, defect 2)', () => {
+  test('the iframe is a child of the shadow root, absent from el.children, and cleaned up by destroy()', async ({ page }) => {
+    test.setTimeout(30_000);
+    await gotoPlayer(page);
+    await stubYouTubeIframeApi(page);
+
+    await setSrc(page, 'https://www.youtube.com/watch?v=AAAAAAAAAAA');
+    await expect.poll(async () => (await getCreated(page)).length, { timeout: 20_000 }).toBeGreaterThan(0);
+
+    const placement = await page.evaluate(() => {
+      const el = document.querySelector('#player')!;
+      return {
+        lightDomChildren: el.children.length,
+        shadowIframeCount: el.shadowRoot?.querySelectorAll('iframe').length ?? 0,
+      };
+    });
+    expect(placement).toEqual({ lightDomChildren: 0, shadowIframeCount: 1 });
+
+    await page.evaluate(() => (document.querySelector('#player') as any).destroy());
+
+    const afterDestroy = await page.evaluate(() => {
+      const el = document.querySelector('#player')!;
+      return {
+        lightDomChildren: el.children.length,
+        shadowIframeCount: el.shadowRoot?.querySelectorAll('iframe').length ?? 0,
+      };
+    });
+    expect(afterDestroy).toEqual({ lightDomChildren: 0, shadowIframeCount: 0 });
+  });
+});

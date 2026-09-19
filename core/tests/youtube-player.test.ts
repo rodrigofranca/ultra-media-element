@@ -30,9 +30,10 @@ describe('YouTubePlayer', () => {
   it('should call load and create an iframe in the container', async () => {
     const element = createVideoElement();
     // ADR-0001: this file is imported by UltraMediaCore, which must not
-    // depend on Shadow DOM - the iframe is a plain light-DOM child of
-    // whatever `container` is given (real <ultra-media> usage passes
-    // itself; its shadow template's unnamed <slot> re-projects it).
+    // depend on Shadow DOM - the iframe is a plain child of whatever
+    // `container` Node is given (any Node with appendChild; real
+    // <ultra-media> usage passes its own shadow root - see the "container
+    // can be a ShadowRoot" test below, cycle 2 defect 2).
     const container = document.createElement('div');
     const player = new YouTubePlayer(element, container);
 
@@ -51,6 +52,30 @@ describe('YouTubePlayer', () => {
     expect(container.querySelector('iframe')).not.toBeNull();
     expect(element.querySelector('iframe')).toBeNull();
     expect(window.YT.Player).toHaveBeenCalled();
+  });
+
+  // cycle 2, defect 2: the real <ultra-media> shell passes its own shadow
+  // root as `container` (not itself) so the iframe never becomes an
+  // observable child of the host element (el.children, page CSS/selectors,
+  // conflicts with slotted <track>s) - a ShadowRoot is a Node with
+  // appendChild, not an HTMLElement, so `container`'s type must accept it.
+  it('accepts a ShadowRoot as container and mounts the iframe inside it, not the host element', async () => {
+    const element = createVideoElement();
+    const host = document.createElement('div');
+    const shadowRoot = host.attachShadow({ mode: 'open' });
+    const player = new YouTubePlayer(element, shadowRoot);
+
+    window.YT.Player = jest.fn().mockImplementation(() => ({
+      playVideo: jest.fn(),
+      pauseVideo: jest.fn(),
+      destroy: jest.fn(),
+    }));
+
+    player.load('https://www.youtube.com/watch?v=VIDEO_ID123');
+    await player.onReady;
+
+    expect(shadowRoot.querySelector('iframe')).not.toBeNull();
+    expect(host.children).toHaveLength(0);
   });
 
   it('should dispatch play and pause events on the element', async () => {

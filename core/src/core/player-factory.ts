@@ -10,7 +10,9 @@ import { YouTubePlayer } from "../players/youtube-player";
 export type PlayerFactoryProps = {
   src: string;
   element: HTMLMediaElement;
-  container?: HTMLElement;
+  // A plain Node (e.g. a ShadowRoot), not HTMLElement - see
+  // UltraMediaCoreOptions.container's comment (ultra-media-core.ts).
+  container?: Node;
   formats?: AvailableFormats;
   /** Explicit format override - skips detectFormat(src). Used by UltraMediaCore.load({ src, type }). */
   format?: Format;
@@ -24,7 +26,7 @@ const DEFAULT_FORMATS: AvailableFormats = {
   [Format.YOUTUBE]: "youtube",
 };
 
-const engines = new Map<string, (el: HTMLVideoElement, container?: HTMLElement) => IMediaPlayer>([
+const engines = new Map<string, (el: HTMLVideoElement, container?: Node) => IMediaPlayer>([
   ["hls.js", (el) => new HlsPlayer(el)],
   ["video/mp4", (el) => new VideoPlayer(el)],
   ["dash.js", (el) => new DashPlayer(el)],
