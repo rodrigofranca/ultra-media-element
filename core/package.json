@@ -6,7 +6,14 @@
   "packageManager": "pnpm@11.15.1",
   "exports": {
     ".": {
-      "import": "./dist/ultra-media.es.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/ultra-media.es.js",
+      "require": "./dist/ultra-media.umd.js"
+    },
+    "./ad": {
+      "types": "./dist/ad.d.ts",
+      "import": "./dist/ultra-media-ad.es.js",
+      "require": "./dist/ultra-media-ad.umd.js"
     }
   },
   "main": "./dist/ultra-media.umd.js",
@@ -21,7 +28,7 @@
   "scripts": {
     "prepublishOnly": "pnpm run build",
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && BUILD_ENTRY=ad vite build",
     "watch": "vite build --watch",
     "preview": "vite preview",
     "test": "jest",
