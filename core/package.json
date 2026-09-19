@@ -30,9 +30,24 @@
     "preview": "vite preview",
     "test": "jest",
     "typecheck": "tsc --noEmit",
+    "size": "size-limit",
     "analyze": "cem analyze",
     "serve:examples": "wet serve --cors --livereload --redirect :examples/ --log-level error"
   },
+  "size-limit": [
+    {
+      "name": "ESM bundle (gzip)",
+      "path": "dist/ultra-media.es.js",
+      "gzip": true,
+      "limit": "35.6 KB"
+    },
+    {
+      "name": "UMD bundle (gzip)",
+      "path": "dist/ultra-media.umd.js",
+      "gzip": true,
+      "limit": "30.2 KB"
+    }
+  ],
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -40,11 +55,13 @@
     "@custom-elements-manifest/analyzer": "^0.10.4",
     "@jest/globals": "30.0.0-beta.3",
     "@rollup/plugin-replace": "^6.0.2",
+    "@size-limit/file": "^14.0.0",
     "@types/jest": "^29.5.14",
     "cem-plugin-vs-code-custom-data-generator": "^1.4.2",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "jsdom": "^26.1.0",
+    "size-limit": "^14.0.0",
     "ts-jest": "^29.3.4",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
