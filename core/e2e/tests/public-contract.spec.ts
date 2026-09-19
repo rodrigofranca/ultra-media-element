@@ -66,6 +66,76 @@ test.describe('public contract: statics', () => {
   });
 });
 
+// Descriptor kind for every one of the 65 native-passthrough members above,
+// in the same order - `method` (a function value), `getter` (read-only
+// accessor, e.g. the NETWORK_*/HAVE_* constants), or `accessor` (get+set,
+// installed even for some native-readonly props - super-media-element's
+// nativeElProps loop is generic about it). Captured by introspecting the
+// real registered class against the built dist/ultra-media.es.js in a real
+// Chromium (same method docs/public-api.md describes) - see the "member
+// with a tampered descriptor is caught" test below for why this exists:
+// `Object.getOwnPropertyNames` alone (the old version of this test) only
+// proves a name exists, not that it's still the right *kind* of member
+// (cycle 2, defect 7).
+const NATIVE_PASSTHROUGH_KINDS = [
+  'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor',
+  'accessor', 'method', 'method', 'method', 'method', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor',
+  'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor',
+  'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor', 'accessor',
+  'accessor', 'accessor', 'accessor', 'getter', 'getter', 'getter', 'getter', 'getter', 'getter', 'getter',
+  'getter', 'getter', 'method', 'method', 'method', 'method', 'method', 'method', 'accessor', 'accessor',
+  'accessor', 'accessor', 'method', 'accessor', 'method',
+];
+
+// name -> descriptor kind for the element's whole effective prototype
+// surface (own + every inherited layer) - replaces the old plain name
+// lists (OWN/SUPER_MEDIA_OWN/MEDIA_TRACKS), each member now paired with
+// the descriptor shape it must keep.
+const EXPECTED_MEMBER_KINDS: Record<string, string> = {
+  // own (UltraMediaElement)
+  setupTrackListeners: 'method', connectedCallback: 'method', disconnectedCallback: 'method', destroy: 'method',
+  attributeChangedCallback: 'method', applySrcChange: 'method', createCore: 'method', forwardCoreEvent: 'method',
+  syncMediaTracks: 'method', removeAllMediaTracks: 'method', changeSource: 'method', getCurrentFormat: 'method',
+  // super-media-element's own surface
+  loadComplete: 'accessor', isLoaded: 'getter', nativeEl: 'accessor', defaultMuted: 'accessor', src: 'accessor', preload: 'accessor',
+  // media-tracks
+  videoTracks: 'getter', audioTracks: 'getter', addVideoTrack: 'method', removeVideoTrack: 'method',
+  addAudioTrack: 'method', removeAudioTrack: 'method', videoRenditions: 'getter', audioRenditions: 'getter',
+  // native passthrough (65, same order as NATIVE_PASSTHROUGH_MEMBERS/_KINDS)
+  ...Object.fromEntries(NATIVE_PASSTHROUGH_MEMBERS.map((name, i) => [name, NATIVE_PASSTHROUGH_KINDS[i]])),
+};
+
+// Runs entirely inside the page (kept as one inline function so it can be
+// passed straight to page.evaluate() without any stringify/eval bridging).
+function collectMemberKindsInPage(): Record<string, string> {
+  function descriptorKind(desc: PropertyDescriptor): string {
+    if (typeof desc.value === 'function') return 'method';
+    if ('value' in desc) return 'value';
+    if (desc.get && desc.set) return 'accessor';
+    if (desc.get) return 'getter';
+    if (desc.set) return 'setter';
+    return 'unknown';
+  }
+  const Ctor = customElements.get('ultra-media') as any;
+  const seen: Record<string, string> = {};
+  let proto = Ctor.prototype;
+  while (proto && proto !== HTMLElement.prototype && proto !== Object.prototype) {
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      if (name === 'constructor' || name in seen) continue;
+      seen[name] = descriptorKind(Object.getOwnPropertyDescriptor(proto, name)!);
+    }
+    proto = Object.getPrototypeOf(proto);
+  }
+  return seen;
+}
+
+// Collects {name: kind} for the element's whole prototype chain, the same
+// walk the old name-only test used - factored out so the "tampered
+// descriptor" test below can reuse it after monkey-patching one member.
+async function collectMemberKinds(page: import('@playwright/test').Page): Promise<Record<string, string>> {
+  return page.evaluate(collectMemberKindsInPage);
+}
+
 test.describe('public contract: full prototype member inventory', () => {
   // ADR-0001 Fase 2: `initializePlayer` moved into UltraMediaCore's
   // load()/wireUp() (no longer a method on the element at all); the element
@@ -74,34 +144,52 @@ test.describe('public contract: full prototype member inventory', () => {
   // specific private method names), so this list is updated accordingly -
   // everything else (own public surface + all 79 inherited members) is
   // unchanged, which is exactly what the rest of this file's tests confirm.
-  test('exactly the 95 documented members exist (16 own + 79 inherited)', async ({ page }) => {
+  test('exactly the 91 documented members exist (12 own + 79 inherited), each with the right descriptor kind', async ({ page }) => {
     await gotoPlayer(page);
-    const names = await page.evaluate(() => {
+    const kinds = await collectMemberKinds(page);
+    expect(kinds).toEqual(EXPECTED_MEMBER_KINDS);
+  });
+
+  // Proves the descriptor-kind check actually does something the old
+  // name-only version couldn't: an inherited member kept its name but had
+  // its *kind* silently changed (accessor -> plain method) - a shape
+  // e.g. a future super-media-element/custom-media-element swap could
+  // introduce without renaming anything. Reverted within the same test, so
+  // it never leaks into any other test's page state.
+  test('a member with a tampered descriptor (same name, wrong kind) is caught', async ({ page }) => {
+    await gotoPlayer(page);
+
+    const before = await collectMemberKinds(page);
+    expect(before.volume).toBe('accessor'); // sanity check on the real, untampered shape
+
+    // `volume` is inherited (defined on an ancestor's prototype, e.g.
+    // super-media-element's SuperMedia base), not an own property of
+    // Ctor.prototype - collectMemberKindsInPage() walks from Ctor.prototype
+    // upward and keeps the first occurrence of each name, so a same-named
+    // *own* property added directly on Ctor.prototype shadows the real one
+    // for that walk without touching the real accessor at all. `delete`
+    // afterwards removes the shadow, letting the walk fall through to the
+    // untouched original again - no need to save/restore any descriptor.
+    await page.evaluate(() => {
       const Ctor = customElements.get('ultra-media') as any;
-      const seen = new Set<string>();
-      let proto = Ctor.prototype;
-      while (proto && proto !== HTMLElement.prototype && proto !== Object.prototype) {
-        for (const name of Object.getOwnPropertyNames(proto)) {
-          if (name !== 'constructor') seen.add(name);
-        }
-        proto = Object.getPrototypeOf(proto);
-      }
-      return [...seen].sort();
+      Object.defineProperty(Ctor.prototype, 'volume', { configurable: true, value: () => {} });
     });
 
-    const OWN = [
-      'setupTrackListeners', 'connectedCallback', 'disconnectedCallback', 'destroy',
-      'attributeChangedCallback', 'applySrcChange', 'createCore', 'forwardCoreEvent',
-      'syncMediaTracks', 'removeAllMediaTracks', 'changeSource', 'getCurrentFormat',
-    ];
-    const SUPER_MEDIA_OWN = ['loadComplete', 'isLoaded', 'nativeEl', 'defaultMuted', 'src', 'preload'];
-    const MEDIA_TRACKS = [
-      'videoTracks', 'audioTracks', 'addVideoTrack', 'removeVideoTrack',
-      'addAudioTrack', 'removeAudioTrack', 'videoRenditions', 'audioRenditions',
-    ];
+    let after: Record<string, string>;
+    try {
+      after = await collectMemberKinds(page);
+    } finally {
+      await page.evaluate(() => {
+        const Ctor = customElements.get('ultra-media') as any;
+        delete Ctor.prototype.volume;
+      });
+    }
 
-    const expected = [...OWN, ...SUPER_MEDIA_OWN, ...MEDIA_TRACKS, ...NATIVE_PASSTHROUGH_MEMBERS].sort();
-    expect(names).toEqual(expected);
+    expect(after.volume).toBe('method'); // caught: no longer matches EXPECTED_MEMBER_KINDS.volume ('accessor')
+    expect(after.volume).not.toBe(EXPECTED_MEMBER_KINDS.volume);
+
+    const restored = await collectMemberKinds(page);
+    expect(restored).toEqual(before); // proves the revert above actually took
   });
 });
 
@@ -255,7 +343,7 @@ test.describe('public contract: media-tracks lists', () => {
 });
 
 test.describe('public contract: native passthrough proxies to nativeEl (mp4, no SDK involved)', () => {
-  test('currentTime/volume/muted/paused/duration/play()/pause()/load() all proxy through', async ({ page }) => {
+  test('currentTime/volume/muted/paused/duration/playbackRate/play()/pause()/load() all proxy through', async ({ page }) => {
     await gotoPlayer(page);
     await instrument(page);
     await setSrc(page, MP4_FIXTURE);
@@ -279,6 +367,13 @@ test.describe('public contract: native passthrough proxies to nativeEl (mp4, no 
       return { volume: el.volume, muted: el.muted, nativeVolume: (el as any).nativeEl.volume, nativeMuted: (el as any).nativeEl.muted };
     });
     expect(volumeResult).toEqual({ volume: 0.3, muted: true, nativeVolume: 0.3, nativeMuted: true });
+
+    const playbackRateResult = await page.evaluate(() => {
+      const el = document.querySelector('#player') as HTMLVideoElement;
+      el.playbackRate = 1.5;
+      return { playbackRate: el.playbackRate, nativePlaybackRate: (el as any).nativeEl.playbackRate };
+    });
+    expect(playbackRateResult).toEqual({ playbackRate: 1.5, nativePlaybackRate: 1.5 });
 
     // load() is the native HTMLVideoElement passthrough (not our own
     // load()) - proxies straight to nativeEl.load(), which resets playback.
