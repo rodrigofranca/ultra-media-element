@@ -338,3 +338,53 @@ describe('UltraMediaElement src change during a synchronous DOM move (cycle 3, d
     el.remove();
   });
 });
+
+describe('UltraMediaElement removing src tears playback down (cycle 2, defect 1)', () => {
+  // applySrcChange used to bail out early with a console.warn whenever `src`
+  // was falsy, before ever reaching the core - removeAttribute('src') (or
+  // `el.src = ''`) left the active player/downloads running. Restored
+  // behavior: an empty/removed src destroys the core, exactly like the
+  // public destroy() method, and the element stays reusable afterwards.
+  it('removeAttribute("src") destroys the active player, and a later src resumes playback', () => {
+    const created = trackingPlayerFactory();
+    const el = createElement();
+    document.body.appendChild(el);
+
+    el.src = 'https://example.com/a.m3u8';
+    expect(created).toHaveLength(1);
+    const firstPlayer = created[0].player;
+
+    el.removeAttribute('src');
+
+    expect(firstPlayer.destroy).toHaveBeenCalledTimes(1);
+
+    el.src = 'https://example.com/b.m3u8';
+    expect(created).toHaveLength(2);
+    expect(created[1].src).toBe('https://example.com/b.m3u8');
+
+    el.remove();
+  });
+
+  it('el.src = "" also destroys the active player', () => {
+    const created = trackingPlayerFactory();
+    const el = createElement();
+    document.body.appendChild(el);
+
+    el.src = 'https://example.com/a.mp4';
+    const firstPlayer = created[0].player;
+
+    el.src = '';
+
+    expect(firstPlayer.destroy).toHaveBeenCalledTimes(1);
+    el.remove();
+  });
+
+  it('removing src when no player was ever created is a harmless no-op', () => {
+    const el = createElement();
+    document.body.appendChild(el);
+
+    expect(() => el.removeAttribute('src')).not.toThrow();
+
+    el.remove();
+  });
+});

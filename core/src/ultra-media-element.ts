@@ -177,10 +177,19 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
   // Delegates to the core (creating it once, lazily, on first use): the
   // core itself decides whether to reuse the current engine via load() or
   // tear it down and create a new one on a format change - see
-  // UltraMediaCore.load(). Records `loadedSrc` either way.
+  // UltraMediaCore.load(). Records `loadedSrc` either way. An empty/removed
+  // `src` (removeAttribute('src'), `el.src = ''`) mirrors the public
+  // destroy() - full teardown via the core, matching `main`'s pre-extraction
+  // behavior (see result-cycle2.md, defect 1) - the element stays reusable.
   private applySrcChange(src: string): void {
-    if (!this.nativeEl || !src) {
-      console.warn('[Ultra Media Element] nativeEl or src not available yet');
+    if (!this.nativeEl) {
+      console.warn('[Ultra Media Element] nativeEl not available yet');
+      return;
+    }
+
+    if (!src) {
+      this.core?.destroy();
+      this.loadedSrc = src;
       return;
     }
 
