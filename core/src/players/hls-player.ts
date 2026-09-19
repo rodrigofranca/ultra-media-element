@@ -3,6 +3,7 @@ import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
 import { HLS_JS_SDK_URL } from "../core/sdk-config";
+import { mapNativeMediaError } from "./native-media-error";
 
 // hls.js's own ErrorTypes ('networkError' | 'mediaError' | 'keySystemError'
 // | 'muxError' | 'otherError') already line up with our category taxonomy
@@ -43,6 +44,7 @@ export class HlsPlayer implements IMediaPlayer {
   // applies it once, at the end, so a rapid A -> B -> C swap while the SDK
   // is still loading only ever loads C.
   private pendingSrc?: string;
+  private nativeErrorHandler?: () => void;
 
   constructor(private element: HTMLVideoElement) {
     log("Powered by Hls.js");
@@ -100,6 +102,19 @@ export class HlsPlayer implements IMediaPlayer {
       }
     });
 
+    // hls.js only logs a native <video> `error` (BufferController's
+    // _onMediaError, node_modules/hls.js/dist/hls.js ~21481-21488) - it
+    // never re-triggers Hls.Events.ERROR for it, so a genuine MSE/decode
+    // failure on the element itself would otherwise reach neither `error`
+    // nor `warning`. Removed in destroy() before hls.js tears down its own
+    // attachment, so teardown itself can't trigger this and double-report.
+    this.nativeErrorHandler = () => {
+      if (this.errorCallback) {
+        this.errorCallback(mapNativeMediaError(this.nativeEl.error, 'hls.js', this.pendingSrc ?? this.nativeEl.currentSrc));
+      }
+    };
+    this.nativeEl.addEventListener('error', this.nativeErrorHandler);
+
     if (this.pendingSrc) {
       this.applyLoad(this.pendingSrc);
     }
@@ -141,6 +156,11 @@ export class HlsPlayer implements IMediaPlayer {
 
   destroy() {
     this.destroyed = true;
+
+    if (this.nativeErrorHandler) {
+      this.nativeEl.removeEventListener('error', this.nativeErrorHandler);
+      this.nativeErrorHandler = undefined;
+    }
 
     if (this.hls) {
       this.hls.destroy();

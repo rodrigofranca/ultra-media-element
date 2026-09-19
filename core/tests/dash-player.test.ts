@@ -67,9 +67,14 @@ function setupMocks() {
 
 async function setupPlayer() {
   const { handlers, mockPlayerInstance } = setupMocks();
-  const player = new DashPlayer(createVideoElement());
+  const nativeEl = createVideoElement();
+  const player = new DashPlayer(nativeEl);
   await player.onReady;
-  return { player, handlers, mockPlayerInstance };
+  return { player, handlers, mockPlayerInstance, nativeEl };
+}
+
+function fakeMediaError(code: number, message = ''): MediaError {
+  return { code, message, MEDIA_ERR_ABORTED: 1, MEDIA_ERR_NETWORK: 2, MEDIA_ERR_DECODE: 3, MEDIA_ERR_SRC_NOT_SUPPORTED: 4 } as MediaError;
 }
 
 describe('DashPlayer renditions', () => {
@@ -208,6 +213,58 @@ describe('DashPlayer error mapping', () => {
     });
 
     expect(onError.mock.calls[0][0]).toMatchObject({ fatal: true, category: 'mediaError' });
+  });
+});
+
+describe('DashPlayer native <video> error forwarding', () => {
+  afterEach(() => {
+    delete (window as any).dashjs;
+  });
+
+  it('translates a native <video> error into a fatal error through the same callback', async () => {
+    const { player, nativeEl } = await setupPlayer();
+    const onError = jest.fn();
+    player.onError(onError);
+
+    Object.defineProperty(nativeEl, 'error', { value: fakeMediaError(3, 'decode failed'), configurable: true });
+    nativeEl.dispatchEvent(new Event('error'));
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toMatchObject({
+      fatal: true,
+      category: 'mediaError',
+      code: 'MEDIA_ERR_DECODE',
+      engine: 'dash.js',
+    });
+  });
+
+  // dash.js re-emits a native MediaError through its OWN `MediaPlayer.events.
+  // ERROR` too (see dash-player.ts's ERROR handler comment) - using the
+  // native code (1-5) as `err.code`. Simulates both firing for the same
+  // underlying failure and asserts exactly one `error` reaches the element.
+  it('does not double-report when dash.js also re-emits the native error via its own ERROR event', async () => {
+    const { player, handlers, nativeEl } = await setupPlayer();
+    const onError = jest.fn();
+    player.onError(onError);
+
+    Object.defineProperty(nativeEl, 'error', { value: fakeMediaError(3, 'decode failed'), configurable: true });
+    nativeEl.dispatchEvent(new Event('error'));
+    handlers.error({ error: { code: 3, message: 'MEDIA_ERR_DECODE (decode failed)' } });
+
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops listening for the native error once destroyed (no spurious event on teardown)', async () => {
+    const { player, nativeEl } = await setupPlayer();
+    const onError = jest.fn();
+    player.onError(onError);
+
+    player.destroy();
+
+    Object.defineProperty(nativeEl, 'error', { value: fakeMediaError(2), configurable: true });
+    nativeEl.dispatchEvent(new Event('error'));
+
+    expect(onError).not.toHaveBeenCalled();
   });
 });
 

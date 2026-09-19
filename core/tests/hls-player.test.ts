@@ -7,7 +7,7 @@ function createVideoElement(): HTMLVideoElement {
 
 type ErrorHandler = (event: unknown, data: any) => void;
 
-async function setupPlayerWithErrorHandler(): Promise<{ player: HlsPlayer; trigger: ErrorHandler }> {
+async function setupPlayerWithErrorHandler(): Promise<{ player: HlsPlayer; trigger: ErrorHandler; nativeEl: HTMLVideoElement }> {
   let trigger: ErrorHandler = () => {};
 
   (window as any).Hls = jest.fn().mockImplementation(() => ({
@@ -16,14 +16,20 @@ async function setupPlayerWithErrorHandler(): Promise<{ player: HlsPlayer; trigg
       if (event === 'hlsError') trigger = cb;
     }),
     loadSource: jest.fn(),
+    destroy: jest.fn(),
   }));
   (window as any).Hls.Events = { ERROR: 'hlsError', MANIFEST_PARSED: 'hlsManifestParsed' };
   (window as any).Hls.isSupported = jest.fn().mockReturnValue(true);
 
-  const player = new HlsPlayer(createVideoElement());
+  const nativeEl = createVideoElement();
+  const player = new HlsPlayer(nativeEl);
   await player.onReady;
 
-  return { player, trigger };
+  return { player, trigger, nativeEl };
+}
+
+function fakeMediaError(code: number, message = ''): MediaError {
+  return { code, message, MEDIA_ERR_ABORTED: 1, MEDIA_ERR_NETWORK: 2, MEDIA_ERR_DECODE: 3, MEDIA_ERR_SRC_NOT_SUPPORTED: 4 } as MediaError;
 }
 
 describe('HlsPlayer error mapping', () => {
@@ -89,6 +95,46 @@ describe('HlsPlayer error mapping', () => {
 
     trigger(null, { type: 'keySystemError', details: 'keySystemNoKeys', fatal: true });
     expect(onError.mock.calls[1][0].category).toBe('otherError');
+  });
+});
+
+describe('HlsPlayer native <video> error forwarding', () => {
+  afterEach(() => {
+    delete (window as any).Hls;
+  });
+
+  // hls.js's own BufferController._onMediaError only logs the native
+  // `error` event (node_modules/hls.js/dist/hls.js ~21481-21488) - it never
+  // re-triggers Hls.Events.ERROR for it, so a genuine MSE/decode failure on
+  // the <video> element was reaching neither `error` nor `warning`.
+  it('translates a native <video> error into a fatal error through the same callback', async () => {
+    const { player, nativeEl } = await setupPlayerWithErrorHandler();
+    const onError = jest.fn();
+    player.onError(onError);
+
+    Object.defineProperty(nativeEl, 'error', { value: fakeMediaError(3, 'decode failed'), configurable: true });
+    nativeEl.dispatchEvent(new Event('error'));
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toMatchObject({
+      fatal: true,
+      category: 'mediaError',
+      code: 'MEDIA_ERR_DECODE',
+      engine: 'hls.js',
+    });
+  });
+
+  it('stops listening for the native error once destroyed (no spurious event on teardown)', async () => {
+    const { player, nativeEl } = await setupPlayerWithErrorHandler();
+    const onError = jest.fn();
+    player.onError(onError);
+
+    player.destroy();
+
+    Object.defineProperty(nativeEl, 'error', { value: fakeMediaError(2), configurable: true });
+    nativeEl.dispatchEvent(new Event('error'));
+
+    expect(onError).not.toHaveBeenCalled();
   });
 });
 

@@ -3,6 +3,7 @@ import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
 import { DASHJS_SDK_URL } from "../core/sdk-config";
+import { mapNativeMediaError } from "./native-media-error";
 
 // dash.js reports every error through one event carrying a numeric
 // `MediaPlayer.errors` code (see node_modules/dashjs/index.d.ts
@@ -107,6 +108,7 @@ export class DashPlayer implements IMediaPlayer {
   // Last requested src; queued the same way as HlsPlayer's when `load()` is
   // called before `this.player` exists yet.
   private pendingSrc?: string;
+  private nativeErrorHandler?: () => void;
 
   constructor(private element: HTMLVideoElement) {
     log("Powered by Dash.js");
@@ -131,6 +133,18 @@ export class DashPlayer implements IMediaPlayer {
       if (this.errorCallback) {
         const err = e.error ?? {};
         const code: number | null = typeof err.code === 'number' ? err.code : null;
+
+        // dash.js re-emits a native <video> MediaError through this same
+        // ERROR event once it gives up on it (its own PlaybackController
+        // `_onPlaybackError`, dash.all.debug.js ~51630-51672, notably with
+        // its own bounded silent-retry for MEDIA_ERR_DECODE first) - using
+        // the *native* MediaError code (1-5) as `err.code`, a range our own
+        // MediaPlayerErrors-based codes (10+) never use. The dedicated
+        // nativeEl 'error' listener below already reports those, in the
+        // same shape every other engine uses (native-media-error.ts) - skip
+        // them here so the same failure isn't reported twice.
+        if (code != null && code >= 1 && code <= 5) return;
+
         const data = err.data ?? {};
         const errors = this.dashjs.MediaPlayer.errors;
         this.errorCallback({
@@ -181,6 +195,18 @@ export class DashPlayer implements IMediaPlayer {
       }
     });
 
+    // Belt-and-suspenders alongside dash.js's own native-error forwarding
+    // above: reports every native <video> `error` through the same shared
+    // mapper every other engine uses (native-media-error.ts), independent
+    // of dash.js's internal wiring. Removed in destroy() before dash.js
+    // tears its own attachment down, so teardown itself can't trigger this.
+    this.nativeErrorHandler = () => {
+      if (this.errorCallback) {
+        this.errorCallback(mapNativeMediaError(this.nativeEl.error, 'dash.js', this.pendingSrc ?? this.nativeEl.currentSrc));
+      }
+    };
+    this.nativeEl.addEventListener('error', this.nativeErrorHandler);
+
     if (this.pendingSrc) {
       this.applyLoad(this.pendingSrc);
     }
@@ -222,6 +248,11 @@ export class DashPlayer implements IMediaPlayer {
 
   destroy() {
     this.destroyed = true;
+
+    if (this.nativeErrorHandler) {
+      this.nativeEl.removeEventListener('error', this.nativeErrorHandler);
+      this.nativeErrorHandler = undefined;
+    }
 
     if (this.player) {
       this.player.destroy();
