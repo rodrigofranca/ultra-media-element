@@ -19,7 +19,6 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
   // frameworks) doesn't tear down a still-wanted player - see
   // disconnectedCallback below and result.md "decisões de design".
   private teardownScheduled = false;
-  private pendingReload = false;
   static skipAttributes = ['src'];
   // super-media-element forwards every native HTMLMediaElement event it
   // sees on `nativeEl` (its shadow-root-level capturing listener runs
@@ -58,19 +57,21 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
     };
   }
 
-  async connectedCallback() {
+  connectedCallback() {
     super.connectedCallback?.();
 
-    // Reconnecting after an *effective* teardown (disconnectedCallback's
-    // microtask actually ran destroy(), i.e. this wasn't just a synchronous
-    // move) needs an explicit reload: the `src` attribute never changed
-    // across the disconnect, so attributeChangedCallback won't fire on its
-    // own to restart playback.
-    if (this.pendingReload) {
-      this.pendingReload = false;
-      if (this.src) {
-        this.initializePlayer();
-      }
+    // Single rule for every "connect with a player that isn't running yet"
+    // case, whether this is the element's very first connection (created
+    // via JS, `src` assigned before insertion - attributeChangedCallback
+    // deliberately did nothing while disconnected, see
+    // attributeChangedCallback below) or a reconnect after an *effective*
+    // teardown (disconnectedCallback's microtask actually ran destroy() -
+    // `src` never changed across that disconnect, so
+    // attributeChangedCallback won't fire on its own to restart playback).
+    // Doesn't run at all when a player is already active (e.g. a
+    // synchronous disconnect+reconnect move - see disconnectedCallback).
+    if (!this.player && this.src) {
+      this.initializePlayer();
     }
   }
 
@@ -90,7 +91,6 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
       if (this.isConnected) return;
 
       this.destroy();
-      this.pendingReload = true;
     });
   }
 
@@ -98,7 +98,20 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
    * Destroys the active player (hls.js/dash.js/YouTube/native) and releases
    * its resources. Public and idempotent - safe to call repeatedly, and
    * safe to call before any player exists. Assigning `src` again afterwards
-   * re-initializes a fresh player and resumes playback.
+   * (even to the same value - see attributeChangedCallback) re-initializes a
+   * fresh player and resumes playback.
+   *
+   * No public `load()` was added alongside this (unlike
+   * `HTMLMediaElement.load()`) - see result.md "decisões de design":
+   * super-media-element's own SuperMedia base gives `load` a reserved,
+   * different meaning (a per-subclass hook it detects via
+   * `this.load !== SuperMedia.prototype.load` and auto-invokes from ITS
+   * OWN attributeChangedCallback on every `src` change, wiring up its own
+   * `loadComplete`/`isLoaded` promise around it). Overriding it here would
+   * make the base class start calling it a second time on top of this
+   * class's own src-handling below - a behavior change to every `src`
+   * mutation project-wide, not just the destroy()-reload case, and out of
+   * this task's scope to take on.
    */
   destroy(): void {
     this.player?.destroy?.();
@@ -113,23 +126,39 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
   async attributeChangedCallback(attrName: string, oldValue: string, newValue: string) {
     super.attributeChangedCallback?.(attrName, oldValue, newValue);
 
-    if (attrName === 'src' && oldValue !== newValue) {
-      if (this.loadComplete && !this.isLoaded) {
-        await this.loadComplete;
-      }
+    if (attrName !== 'src') return;
 
-      const currentFormat = this.getCurrentFormat();
-      const newFormat = detectFormat(newValue ?? '');
+    // A no-op unless something actually needs to (re)start: either the
+    // value genuinely changed, or it's the exact same value being
+    // reassigned onto an element with no active player - e.g.
+    // `el.destroy(); el.src = el.src`, which the custom elements spec
+    // still runs this callback for (setAttribute() always queues the
+    // reaction, even when the new value equals the old one). Without this,
+    // reassigning the same src after destroy() had no signal to react to
+    // and playback stayed dead.
+    if (oldValue === newValue && this.player) return;
 
-      if (currentFormat !== newFormat) {
-        this.destroy();
-      }
+    if (this.loadComplete && !this.isLoaded) {
+      await this.loadComplete;
+    }
 
-      if (this.player && currentFormat === newFormat) {
-        this.player.load(newValue);
-      } else {
-        this.initializePlayer();
-      }
+    // Disconnected: leave the player alone (there shouldn't be one - see
+    // connectedCallback). `src` just becomes the pending value connect()
+    // reads whenever it next connects, whether this is the element's first
+    // connection or a reconnect after an effective teardown.
+    if (!this.isConnected) return;
+
+    const currentFormat = this.getCurrentFormat();
+    const newFormat = detectFormat(newValue ?? '');
+
+    if (currentFormat !== newFormat) {
+      this.destroy();
+    }
+
+    if (this.player && currentFormat === newFormat) {
+      this.player.load(newValue);
+    } else {
+      this.initializePlayer();
     }
   }
 
