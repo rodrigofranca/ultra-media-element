@@ -137,5 +137,29 @@ test.describe('cancel in-flight player creation while the SDK is still loading',
       expect(manifestRequests).toHaveLength(1);
       expect(manifestRequests[0]).toContain('v=c');
     });
+
+    // cycle 3, defect 5: only an A -> B -> C swap was covered - A -> B -> A
+    // (returning to the *first* src) exercises a different path in
+    // PlayerFactory/HlsPlayer/DashPlayer's own `pendingSrc` bookkeeping
+    // (whichever value is written last wins, not "whichever differs from
+    // the previous one"), so it deserves its own proof: only A should ever
+    // be requested once the engine is finally instantiated.
+    test(`rapid src swap (A -> B -> A) while the SDK is still loading only requests A (${engine})`, async ({ page }) => {
+      test.setTimeout(60_000);
+      await gotoPlayer(page);
+      await delaySdkResponse(page, sdkUrl);
+      const manifestRequests = await trackRequestUrls(page, manifestGlob);
+
+      await setSrc(page, `${manifest}?v=a`);
+      await setSrc(page, `${manifest}?v=b`);
+      await setSrc(page, `${manifest}?v=a`);
+
+      await expect.poll(() => manifestRequests.length, { timeout: SDK_DELAY_MS + 20_000 }).toBeGreaterThan(0);
+      // Give any (incorrect) extra request a moment to show up too.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      expect(manifestRequests).toHaveLength(1);
+      expect(manifestRequests[0]).toContain('v=a');
+    });
   }
 });

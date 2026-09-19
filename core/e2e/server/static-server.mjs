@@ -27,6 +27,11 @@ const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
   '.mjs': 'application/javascript; charset=utf-8',
+  // The published UMD entries (dist/*.umd.cjs) - cycle 3, defect 5's plain
+  // <script src="...dist/ultra-media-core.umd.cjs"> e2e case needs a real
+  // JS content-type; without an entry here this fell back to
+  // application/octet-stream.
+  '.cjs': 'application/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.mp4': 'video/mp4',
   '.m4s': 'video/iso.segment',

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>UltraMediaCore e2e harness - UMD global via plain &lt;script src&gt;</title>
+  <!-- A plain, non-module <script src> - the actual "UMD as a browser
+       global" consumption path (cycle 3, defect 5). Distinct from
+       core-only.html (ESM import) and tests/require-entries.test.ts
+       (Node require()) - neither proves this one works. -->
+  <script src="/dist/ultra-media-core.umd.cjs"></script>
+</head>
+<body>
+  <!-- A completely ordinary <video>, not <ultra-media>. -->
+  <video id="video" muted playsinline></video>
+</body>
+</html>
