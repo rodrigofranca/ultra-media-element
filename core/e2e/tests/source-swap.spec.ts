@@ -26,20 +26,13 @@ test.describe('source swap', () => {
     await loadAndPlayThrough(page, SOURCES.dash);
   });
 
-  // Descoberta: core/src/players/video-player.ts:35 and
-  // core/src/players/audio-player.ts:15 tear down by doing
-  // `this.element.src = ''`. Setting an empty string `src` on a native
-  // <video>/<audio> is itself a valid (if unusual) source per the HTML spec,
-  // which runs the "media element load algorithm" and fires a real `error`
-  // (MEDIA_ERR_SRC_NOT_SUPPORTED-shaped) event on the element - forwarded
-  // by super-media-element up to <ultra-media> as a native `error` event
-  // (not the player's structured CustomEvent('error', {detail}); this one's
-  // `detail` is null). A host listening for `error` to show a "playback
-  // failed" UI sees a false positive on every hls/dash -> mp4/audio format
-  // swap. `element.removeAttribute('src')` would not have this side effect.
-  // Not fixed here (out of scope - no src/ changes).
+  // core/src/players/video-player.ts and audio-player.ts now tear down with
+  // `removeAttribute('src')` + `load()` instead of `element.src = ''` - the
+  // latter is itself a valid (if unusual) source per the HTML spec and runs
+  // the "media element load algorithm", firing a real `error` event; the
+  // former lets that same algorithm see there's nothing to load and reset
+  // to NETWORK_EMPTY silently. See result.md "decisões de design".
   test('swapping away from mp4/audio does not fire a spurious native error event', async ({ page }) => {
-    test.fail();
     await gotoPlayer(page);
     await instrument(page);
 

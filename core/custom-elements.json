@@ -22,6 +22,14 @@
             "name": "UltraMediaElement",
             "module": "src/index.ts"
           }
+        },
+        {
+          "kind": "js",
+          "name": "MediaPlayerError",
+          "declaration": {
+            "name": "MediaPlayerError",
+            "module": "./core/media-player"
+          }
         }
       ]
     },
@@ -189,12 +197,35 @@
             },
             {
               "kind": "field",
+              "name": "teardownScheduled",
+              "type": {
+                "text": "boolean"
+              },
+              "privacy": "private",
+              "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "pendingReload",
+              "type": {
+                "text": "boolean"
+              },
+              "privacy": "private",
+              "default": "false"
+            },
+            {
+              "kind": "field",
               "name": "skipAttributes",
               "type": {
                 "text": "array"
               },
               "static": true,
               "default": "['src']"
+            },
+            {
+              "kind": "field",
+              "name": "Events",
+              "static": true
             },
             {
               "kind": "field",
@@ -228,6 +259,16 @@
             },
             {
               "kind": "method",
+              "name": "destroy",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Destroys the active player (hls.js/dash.js/YouTube/native) and releases\nits resources. Public and idempotent - safe to call repeatedly, and\nsafe to call before any player exists. Assigning `src` again afterwards\nre-initializes a fresh player and resumes playback."
+            },
+            {
+              "kind": "method",
               "name": "initializePlayer",
               "privacy": "private"
             },
@@ -256,11 +297,13 @@
                   "text": "Format | undefined"
                 }
               }
-            },
+            }
+          ],
+          "events": [
             {
-              "kind": "method",
-              "name": "destroyPlayer",
-              "privacy": "private"
+              "type": {
+                "text": "CustomEvent"
+              }
             }
           ],
           "attributes": [
@@ -382,7 +425,7 @@
               },
               "parameters": [
                 {
-                  "name": "{ src, element, formats }",
+                  "name": "{ src, element, container, formats }",
                   "type": {
                     "text": "PlayerFactoryProps"
                   }
@@ -438,6 +481,89 @@
     },
     {
       "kind": "javascript-module",
+      "path": "src/core/sdk-config.ts",
+      "declarations": [
+        {
+          "kind": "variable",
+          "name": "HLS_JS_VERSION",
+          "type": {
+            "text": "string"
+          },
+          "default": "\"1.7.3\"",
+          "description": "Central place for third-party SDK versions/URLs loaded dynamically at\nruntime. Always pin an exact version here — an unpinned/\"latest\" CDN build\ncan change under production traffic without a corresponding release here.\n\nThe YouTube IFrame API and Google's IMA3 SDK (loaded by the `ima-ad-player`\ndependency) are intentionally not listed: neither is offered by Google as a\nversioned/pinned URL, so there is nothing to fix here for them. See\nresult.md \"Descobertas\"."
+        },
+        {
+          "kind": "variable",
+          "name": "DASHJS_VERSION",
+          "type": {
+            "text": "string"
+          },
+          "default": "\"5.2.1\""
+        },
+        {
+          "kind": "variable",
+          "name": "HLS_JS_SDK_URL",
+          "default": "`https://cdn.jsdelivr.net/npm/hls.js@${HLS_JS_VERSION}/dist/hls.min.js`"
+        },
+        {
+          "kind": "variable",
+          "name": "DASHJS_SDK_URL",
+          "default": "`https://cdn.jsdelivr.net/npm/dashjs@${DASHJS_VERSION}/dist/modern/umd/dash.all.min.js`"
+        },
+        {
+          "kind": "variable",
+          "name": "YOUTUBE_IFRAME_API_URL",
+          "type": {
+            "text": "string"
+          },
+          "default": "\"https://www.youtube.com/iframe_api\""
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "HLS_JS_VERSION",
+          "declaration": {
+            "name": "HLS_JS_VERSION",
+            "module": "src/core/sdk-config.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "DASHJS_VERSION",
+          "declaration": {
+            "name": "DASHJS_VERSION",
+            "module": "src/core/sdk-config.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "HLS_JS_SDK_URL",
+          "declaration": {
+            "name": "HLS_JS_SDK_URL",
+            "module": "src/core/sdk-config.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "DASHJS_SDK_URL",
+          "declaration": {
+            "name": "DASHJS_SDK_URL",
+            "module": "src/core/sdk-config.ts"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "YOUTUBE_IFRAME_API_URL",
+          "declaration": {
+            "name": "YOUTUBE_IFRAME_API_URL",
+            "module": "src/core/sdk-config.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
       "path": "src/players/audio-player.ts",
       "declarations": [
         {
@@ -454,6 +580,14 @@
               "privacy": "public"
             },
             {
+              "kind": "field",
+              "name": "errorHandler",
+              "type": {
+                "text": "(e: Event) => void | undefined"
+              },
+              "privacy": "private"
+            },
+            {
               "kind": "method",
               "name": "load",
               "return": {
@@ -466,6 +600,18 @@
                   "name": "src",
                   "type": {
                     "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "onError",
+              "parameters": [
+                {
+                  "name": "callback",
+                  "type": {
+                    "text": "(error: MediaPlayerError) => void"
                   }
                 }
               ]
@@ -543,7 +689,7 @@
                 "text": "string"
               },
               "privacy": "private",
-              "default": "'https://cdn.jsdelivr.net/npm/dashjs@latest/dist/dash.all.min.js'"
+              "default": "DASHJS_SDK_URL"
             },
             {
               "kind": "field",
@@ -564,6 +710,14 @@
             },
             {
               "kind": "field",
+              "name": "errorCallback",
+              "type": {
+                "text": "(error: MediaPlayerError) => void | undefined"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
               "name": "audioTracks",
               "type": {
                 "text": "any[]"
@@ -573,7 +727,7 @@
             },
             {
               "kind": "field",
-              "name": "videoTracks",
+              "name": "videoRepresentations",
               "type": {
                 "text": "any[]"
               },
@@ -593,6 +747,18 @@
                   "name": "callback",
                   "type": {
                     "text": "(tracks: MediaTracks) => void"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "onError",
+              "parameters": [
+                {
+                  "name": "callback",
+                  "type": {
+                    "text": "(error: MediaPlayerError) => void"
                   }
                 }
               ]
@@ -701,7 +867,7 @@
                 "text": "string"
               },
               "privacy": "private",
-              "default": "'https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js'"
+              "default": "HLS_JS_SDK_URL"
             },
             {
               "kind": "field",
@@ -721,6 +887,14 @@
               "privacy": "private"
             },
             {
+              "kind": "field",
+              "name": "errorCallback",
+              "type": {
+                "text": "(error: MediaPlayerError) => void | undefined"
+              },
+              "privacy": "private"
+            },
+            {
               "kind": "method",
               "name": "setup",
               "privacy": "private"
@@ -733,6 +907,18 @@
                   "name": "callback",
                   "type": {
                     "text": "(tracks: MediaTracks) => void"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "onError",
+              "parameters": [
+                {
+                  "name": "callback",
+                  "type": {
+                    "text": "(error: MediaPlayerError) => void"
                   }
                 }
               ]
@@ -793,6 +979,51 @@
     },
     {
       "kind": "javascript-module",
+      "path": "src/players/native-media-error.ts",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "mapNativeMediaError",
+          "return": {
+            "type": {
+              "text": "MediaPlayerError"
+            }
+          },
+          "parameters": [
+            {
+              "name": "mediaError",
+              "type": {
+                "text": "MediaError | null"
+              }
+            },
+            {
+              "name": "engine",
+              "type": {
+                "text": "string"
+              }
+            },
+            {
+              "name": "src",
+              "type": {
+                "text": "string"
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "mapNativeMediaError",
+          "declaration": {
+            "name": "mapNativeMediaError",
+            "module": "src/players/native-media-error.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
       "path": "src/players/video-player.ts",
       "declarations": [
         {
@@ -807,6 +1038,269 @@
                 "text": "Promise<void>"
               },
               "privacy": "public"
+            },
+            {
+              "kind": "field",
+              "name": "errorHandler",
+              "type": {
+                "text": "(e: Event) => void | undefined"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "method",
+              "name": "load",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "src",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "onError",
+              "parameters": [
+                {
+                  "name": "callback",
+                  "type": {
+                    "text": "(error: MediaPlayerError) => void"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "destroy",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "VideoPlayer",
+          "declaration": {
+            "name": "VideoPlayer",
+            "module": "src/players/video-player.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/players/youtube-player.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "",
+          "name": "YouTubePlayer",
+          "members": [
+            {
+              "kind": "field",
+              "name": "onReady",
+              "type": {
+                "text": "Promise<void>"
+              },
+              "privacy": "public"
+            },
+            {
+              "kind": "field",
+              "name": "player",
+              "type": {
+                "text": "any"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "iframe",
+              "type": {
+                "text": "HTMLIFrameElement | null"
+              },
+              "privacy": "private",
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "container",
+              "type": {
+                "text": "HTMLElement"
+              },
+              "privacy": "private",
+              "default": "container"
+            },
+            {
+              "kind": "field",
+              "name": "timeUpdateInterval",
+              "type": {
+                "text": "any"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "progressInterval",
+              "type": {
+                "text": "any"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "isLoaded",
+              "type": {
+                "text": "boolean"
+              },
+              "privacy": "private",
+              "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "lastCurrentTime",
+              "type": {
+                "text": "number"
+              },
+              "privacy": "private",
+              "default": "0"
+            },
+            {
+              "kind": "field",
+              "name": "seeking",
+              "type": {
+                "text": "boolean"
+              },
+              "privacy": "private",
+              "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "isDestroyed",
+              "type": {
+                "text": "boolean"
+              },
+              "privacy": "private",
+              "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "errorCallback",
+              "type": {
+                "text": "(error: MediaPlayerError) => void | undefined"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "currentSrc",
+              "type": {
+                "text": "string"
+              },
+              "privacy": "private",
+              "default": "''"
+            },
+            {
+              "kind": "field",
+              "name": "originalMethods",
+              "type": {
+                "text": "object"
+              },
+              "privacy": "private",
+              "default": "{ play: null as (() => Promise<void>) | null, pause: null as (() => void) | null, load: null as (() => void) | null }"
+            },
+            {
+              "kind": "field",
+              "name": "originalDescriptors",
+              "type": {
+                "text": "Map<string, PropertyDescriptor>"
+              },
+              "privacy": "private",
+              "default": "new Map()"
+            },
+            {
+              "kind": "method",
+              "name": "setupProxy",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "setupPropertyProxies",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "backupOriginalProperty",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "propertyName",
+                  "type": {
+                    "text": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "setupMethodProxies",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "cleanupProxy",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "onError",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "callback",
+                  "type": {
+                    "text": "(error: MediaPlayerError) => void"
+                  }
+                }
+              ]
             },
             {
               "kind": "method",
@@ -833,6 +1327,148 @@
                   "text": "void"
                 }
               }
+            },
+            {
+              "kind": "method",
+              "name": "onPlayerReady",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "onPlayerStateChange",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": {
+                    "text": "any"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "onPlaybackRateChange",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": {
+                    "text": "any"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "onPlayerError",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": {
+                    "text": "any"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "startTimeUpdate",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "stopTimeUpdate",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "pause",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "field",
+              "name": "muted",
+              "type": {
+                "text": "boolean"
+              }
+            },
+            {
+              "kind": "field",
+              "name": "volume",
+              "type": {
+                "text": "number"
+              }
+            },
+            {
+              "kind": "field",
+              "name": "currentTime",
+              "type": {
+                "text": "number"
+              }
+            },
+            {
+              "kind": "field",
+              "name": "duration",
+              "type": {
+                "text": "number"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "buffered",
+              "type": {
+                "text": "TimeRanges"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "play"
+            },
+            {
+              "kind": "field",
+              "name": "pause"
+            },
+            {
+              "kind": "field",
+              "name": "load"
             }
           ]
         }
@@ -840,10 +1476,10 @@
       "exports": [
         {
           "kind": "js",
-          "name": "VideoPlayer",
+          "name": "YouTubePlayer",
           "declaration": {
-            "name": "VideoPlayer",
-            "module": "src/players/video-player.ts"
+            "name": "YouTubePlayer",
+            "module": "src/players/youtube-player.ts"
           }
         }
       ]
@@ -901,7 +1537,10 @@
           "name": "serialize",
           "parameters": [
             {
-              "name": "props"
+              "name": "props",
+              "type": {
+                "text": "Record<string, unknown>"
+              }
             }
           ]
         },
@@ -910,7 +1549,10 @@
           "name": "serializeIframeUrl",
           "parameters": [
             {
-              "name": "attrs"
+              "name": "attrs",
+              "type": {
+                "text": "Record<string, any>"
+              }
             }
           ]
         }
@@ -1097,7 +1739,10 @@
           "name": "loadDependency",
           "parameters": [
             {
-              "name": "url"
+              "name": "url",
+              "type": {
+                "text": "string"
+              }
             },
             {
               "name": "globalVariable",
@@ -1688,7 +2333,10 @@
           "name": "isEmpty",
           "parameters": [
             {
-              "name": "obj"
+              "name": "obj",
+              "type": {
+                "text": "Record<string, unknown>"
+              }
             }
           ]
         }

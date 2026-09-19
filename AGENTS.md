@@ -14,9 +14,13 @@ All development happens in `core/`. Run every command from there.
 - `src/ultra-media-element.ts` — main `<ultra-media>` custom element
 - `src/core/player-factory.ts` — picks a player from the detected format
 - `src/core/format-detector.ts` — URL → format detection
-- `src/core/media-player.ts` — `IMediaPlayer` interface all players implement
+- `src/core/media-player.ts` — `IMediaPlayer` interface all players implement,
+  plus the `MediaPlayerError` shape every engine's `onError` reports (see
+  README.md "Eventos de erro")
 - `src/core/sdk-config.ts` — pinned versions/URLs for dynamically loaded SDKs
-- `src/players/` — one class per format (Hls, Dash, Video, Audio, YouTube)
+- `src/players/` — one class per format (Hls, Dash, Video, Audio, YouTube),
+  plus `native-media-error.ts` (shared MediaError → MediaPlayerError mapping
+  for the two native-<video>/<audio>-backed players)
 - `src/ultra-media-ad.ts` — `<ultra-media-ad>`, wraps `ima-ad-player`
 - `tests/` — Jest + jsdom, one `*.test.ts` per area under test
 - `e2e/` — Playwright, real-browser playback against the built `dist/`

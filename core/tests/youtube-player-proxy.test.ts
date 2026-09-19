@@ -91,24 +91,19 @@ describe('YouTubePlayer Proxy Pattern - Phase 1, 2, 3 & 4', () => {
   });
 
   test('should cleanup proxy and restore original methods', () => {
-    const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-    
     // Get references to original methods
     const originalPlay = mockElement.play;
     const originalPause = mockElement.pause;
     const originalLoad = mockElement.load;
-    
+
     // Setup and then cleanup
     player.setupProxy();
     player.cleanupProxy();
-    
+
     // Verify methods are restored (they should be the same references)
     expect(mockElement.play).toBe(originalPlay);
     expect(mockElement.pause).toBe(originalPause);
     expect(mockElement.load).toBe(originalLoad);
-    
-    expect(consoleSpy).toHaveBeenCalledWith('YouTubePlayer: Proxy cleanup completed');
-    consoleSpy.mockRestore();
   });
 
   test('should initialize originalDescriptors Map', () => {

@@ -87,3 +87,101 @@ describe('YouTubePlayer', () => {
     expect(pauseSpy).toHaveBeenCalledWith(new Event('pause'));
   });
 });
+
+// The module-level `loadYouTubeAPI()` cache (see youtube-player.ts) is what
+// makes every other test in this file resolve `onReady` synchronously -
+// `window.YT.Player` is already present at player-construction time. Testing
+// the actual race (load()s that land *before* the IFrame API script finishes
+// loading) needs a fresh copy of the module with no cached `apiLoaded` and no
+// `window.YT` yet, so each test here gets its own via `jest.isolateModulesAsync`
+// + a fresh `require()` - same technique hls-player.test.ts/dash-player.test.ts
+// already use for their own SDK-load-race tests.
+describe('YouTubePlayer cancels stale sources while the IFrame API is still loading (cycle 3, defect 1)', () => {
+  const originalYT = (window as any).YT;
+
+  afterEach(() => {
+    (window as any).YT = originalYT;
+    delete (window as any).onYouTubeIframeAPIReady;
+  });
+
+  async function withFreshYouTubePlayer(
+    run: (ctx: { YouTubePlayer: typeof YouTubePlayer }) => Promise<void>
+  ): Promise<void> {
+    delete (window as any).YT;
+    await jest.isolateModulesAsync(async () => {
+      const freshModule = require('../src/players/youtube-player');
+      await run({ YouTubePlayer: freshModule.YouTubePlayer });
+    });
+  }
+
+  // Simulates the IFrame API script finally loading: defines `window.YT`
+  // with a fake `Player` that records every videoId it's constructed with,
+  // then invokes the ready callback `loadYouTubeAPI()` registered on
+  // `window` before the (fake) script was inserted.
+  function resolveApiReady(): string[] {
+    const created: string[] = [];
+    (window as any).YT = {
+      PlayerState: { PLAYING: 1, PAUSED: 2, ENDED: 0 },
+      Player: jest.fn().mockImplementation((_el: any, options: any) => {
+        created.push(options.videoId);
+        return { playVideo: jest.fn(), pauseVideo: jest.fn(), destroy: jest.fn() };
+      }),
+    };
+    (window as any).onYouTubeIframeAPIReady();
+    return created;
+  }
+
+  it('a rapid src swap (A -> B -> C) before the API is ready only creates a player for C', async () => {
+    await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
+      const element = createVideoElement();
+      const container = document.createElement('div');
+      container.attachShadow({ mode: 'open' });
+      const player = new FreshYouTubePlayer(element, container);
+
+      player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
+      player.load('https://www.youtube.com/watch?v=BBBBBBBBBBB');
+      player.load('https://www.youtube.com/watch?v=CCCCCCCCCCC');
+
+      const created = resolveApiReady();
+      await player.onReady;
+
+      expect(created).toEqual(['CCCCCCCCCCC']);
+    });
+  });
+
+  it('returning to an earlier src (A -> B -> A) before the API is ready creates a single player', async () => {
+    await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
+      const element = createVideoElement();
+      const container = document.createElement('div');
+      container.attachShadow({ mode: 'open' });
+      const player = new FreshYouTubePlayer(element, container);
+
+      player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
+      player.load('https://www.youtube.com/watch?v=BBBBBBBBBBB');
+      player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
+
+      const created = resolveApiReady();
+      await player.onReady;
+
+      expect(created).toEqual(['AAAAAAAAAAA']);
+    });
+  });
+
+  it('destroy() before the API is ready creates no player', async () => {
+    await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
+      const element = createVideoElement();
+      const container = document.createElement('div');
+      container.attachShadow({ mode: 'open' });
+      const player = new FreshYouTubePlayer(element, container);
+
+      player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
+      player.destroy();
+
+      const created = resolveApiReady();
+      await player.onReady;
+
+      expect(created).toEqual([]);
+      expect(container.shadowRoot?.querySelector('iframe')).toBeNull();
+    });
+  });
+});

@@ -10,6 +10,7 @@ const INSTRUMENTED_EVENTS = [
   'seeked',
   'timeupdate',
   'error',
+  'warning',
   'emptied',
 ] as const;
 

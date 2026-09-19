@@ -20,13 +20,23 @@ export interface MediaTracks {
   renditions?: VideoRendition[];
 }
 
+export type MediaErrorCategory = 'networkError' | 'mediaError' | 'otherError';
+
+/**
+ * Uniform shape every engine's `onError` callback reports, whether the
+ * player surfaces it as a fatal `error` or a recoverable `warning` (that
+ * routing decision is made once, centrally, in ultra-media-element.ts based
+ * on `fatal` - see result.md "decisões de design").
+ */
 export interface MediaPlayerError {
-  type: 'networkError' | 'mediaError' | 'otherError';
-  details: string;
   fatal: boolean;
-  statusCode?: number;
+  category: MediaErrorCategory;
+  code: string;
+  message: string;
+  engine: string;
   url?: string;
-  message?: string;
+  status?: number;
+  cause?: unknown;
 }
 
 export interface IMediaPlayer {

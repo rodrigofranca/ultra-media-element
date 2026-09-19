@@ -1,5 +1,20 @@
-import type { IMediaPlayer } from "../core/media-player";
+import type { IMediaPlayer, MediaErrorCategory, MediaPlayerError } from "../core/media-player";
 import { YOUTUBE_IFRAME_API_URL } from "../core/sdk-config";
+
+// https://developers.google.com/youtube/iframe_api_reference#onError - every
+// one of these is terminal for the requested video (no automatic retry from
+// the IFrame API), so all map to fatal:true.
+const YT_ERROR_MESSAGES: Record<number, string> = {
+  2: 'Invalid video ID or parameter',
+  5: 'HTML5 player error',
+  100: 'Video not found or removed',
+  101: 'Playback disallowed by the video owner (embedding)',
+  150: 'Playback disallowed by the video owner (embedding)',
+};
+
+function categorizeYouTubeError(code: number): MediaErrorCategory {
+  return code === 5 ? 'mediaError' : 'otherError';
+}
 
 class TimeRanges {
   private ranges: [number, number][];
@@ -73,6 +88,15 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   private lastCurrentTime = 0;
   private seeking = false;
   private isDestroyed = false;
+  private errorCallback?: (error: MediaPlayerError) => void;
+  private currentSrc = '';
+  // Bumped by every load(). Each load() registers its own
+  // `.onReady.then(...)` (see load() below) - comparing generations lets a
+  // continuation tell whether a later load() has already superseded it once
+  // the (shared) API promise resolves, so an A -> B -> C swap before that
+  // only ever materializes C. A counter rather than the src itself, so that
+  // returning to an earlier src (A -> B -> A) still creates a single player.
+  private loadGeneration = 0;
 
   // Backup of original HTMLMediaElement methods for restoration
   private originalMethods = {
@@ -292,16 +316,22 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     });
 
     this.originalDescriptors.clear();
-    console.log('YouTubePlayer: Proxy cleanup completed');
+  }
+
+  onError(callback: (error: MediaPlayerError) => void): void {
+    this.errorCallback = callback;
   }
 
   load(src: string): void {
+    const generation = ++this.loadGeneration;
+    this.currentSrc = src;
     this.element.dispatchEvent(new Event('emptied'));
     this.element.dispatchEvent(new Event('loadstart'));
 
     this.onReady.then(() => {
-      // Guard: se o player foi destruído externamente (ex: troca de formato), cancela
-      if (this.isDestroyed) return;
+      // Bail if destroyed, or if a later load() call already superseded
+      // this one - see `loadGeneration`'s comment above.
+      if (this.isDestroyed || this.loadGeneration !== generation) return;
 
       const videoId = src.match(MATCH_SRC)?.[1];
       if (!videoId) {
@@ -447,7 +477,16 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
 
   private onPlayerError(event: any): void {
     if (this.isDestroyed) return;
-    console.error('YouTubePlayer onPlayerError', event);
+    const code = event?.data;
+    this.errorCallback?.({
+      fatal: true,
+      category: categorizeYouTubeError(code),
+      code: String(code),
+      message: YT_ERROR_MESSAGES[code] || `YouTube player error (code ${code})`,
+      engine: 'youtube',
+      url: this.currentSrc || undefined,
+      cause: event,
+    });
   }
 
   private startTimeUpdate(): void {
