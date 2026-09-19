@@ -32,6 +32,8 @@
     "typecheck": "tsc --noEmit",
     "size": "size-limit",
     "analyze": "cem analyze",
+    "e2e": "pnpm run build && playwright test --config=e2e/playwright.config.ts",
+    "e2e:network": "pnpm run build && E2E_NETWORK=1 playwright test --config=e2e/playwright.config.ts",
     "serve:examples": "wet serve --cors --livereload --redirect :examples/ --log-level error"
   },
   "size-limit": [
@@ -54,10 +56,14 @@
   "devDependencies": {
     "@custom-elements-manifest/analyzer": "^0.10.4",
     "@jest/globals": "30.0.0-beta.3",
+    "@playwright/test": "^1.63.0",
     "@rollup/plugin-replace": "^6.0.2",
     "@size-limit/file": "^14.0.0",
     "@types/jest": "^29.5.14",
     "cem-plugin-vs-code-custom-data-generator": "^1.4.2",
+    "dashjs": "5.2.1",
+    "ffmpeg-static": "^5.3.0",
+    "hls.js": "1.7.3",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "jsdom": "^26.1.0",
