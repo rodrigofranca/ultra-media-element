@@ -90,11 +90,13 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   private isDestroyed = false;
   private errorCallback?: (error: MediaPlayerError) => void;
   private currentSrc = '';
-  // Last requested src. Each load() registers its own `.onReady.then(...)`
-  // (see load() below) - this lets a continuation tell whether a later
-  // load() has already superseded it once the (shared) API promise
-  // resolves, so an A -> B -> C swap before that only ever materializes C.
-  private pendingSrc?: string;
+  // Bumped by every load(). Each load() registers its own
+  // `.onReady.then(...)` (see load() below) - comparing generations lets a
+  // continuation tell whether a later load() has already superseded it once
+  // the (shared) API promise resolves, so an A -> B -> C swap before that
+  // only ever materializes C. A counter rather than the src itself, so that
+  // returning to an earlier src (A -> B -> A) still creates a single player.
+  private loadGeneration = 0;
 
   // Backup of original HTMLMediaElement methods for restoration
   private originalMethods = {
@@ -321,15 +323,15 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   }
 
   load(src: string): void {
-    this.pendingSrc = src;
+    const generation = ++this.loadGeneration;
     this.currentSrc = src;
     this.element.dispatchEvent(new Event('emptied'));
     this.element.dispatchEvent(new Event('loadstart'));
 
     this.onReady.then(() => {
       // Bail if destroyed, or if a later load() call already superseded
-      // this one - see `pendingSrc`'s comment above.
-      if (this.isDestroyed || this.pendingSrc !== src) return;
+      // this one - see `loadGeneration`'s comment above.
+      if (this.isDestroyed || this.loadGeneration !== generation) return;
 
       const videoId = src.match(MATCH_SRC)?.[1];
       if (!videoId) {

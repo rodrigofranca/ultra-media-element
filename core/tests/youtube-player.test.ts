@@ -149,6 +149,24 @@ describe('YouTubePlayer cancels stale sources while the IFrame API is still load
     });
   });
 
+  it('returning to an earlier src (A -> B -> A) before the API is ready creates a single player', async () => {
+    await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
+      const element = createVideoElement();
+      const container = document.createElement('div');
+      container.attachShadow({ mode: 'open' });
+      const player = new FreshYouTubePlayer(element, container);
+
+      player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
+      player.load('https://www.youtube.com/watch?v=BBBBBBBBBBB');
+      player.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
+
+      const created = resolveApiReady();
+      await player.onReady;
+
+      expect(created).toEqual(['AAAAAAAAAAA']);
+    });
+  });
+
   it('destroy() before the API is ready creates no player', async () => {
     await withFreshYouTubePlayer(async ({ YouTubePlayer: FreshYouTubePlayer }) => {
       const element = createVideoElement();
