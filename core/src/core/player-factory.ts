@@ -61,7 +61,16 @@ export class PlayerFactory {
     element.dataset.type = engineType;
     const player = engine(element as HTMLVideoElement, container);
 
-    player.onReady.then(() => player.load(src));
+    // Call load() synchronously instead of chaining it onto `onReady`: every
+    // player now queues the src internally and applies it once actually
+    // ready (see e.g. HlsPlayer/DashPlayer's `pendingSrc`), which is what
+    // lets a later load() (a src change before the SDK finished loading)
+    // safely overwrite this one instead of racing it - the old
+    // `onReady.then(() => player.load(src))` fired with this closure's
+    // stale `src` *after* any such later call, always re-loading the wrong,
+    // stale source once the SDK caught up. See result.md "decisões de
+    // design".
+    player.load(src);
     return player;
   }
 

@@ -29,6 +29,20 @@ export class HlsPlayer implements IMediaPlayer {
   private config = {}
   private tracksChangeCallback?: (tracks: MediaTracks) => void;
   private errorCallback?: (error: MediaPlayerError) => void;
+  // Guards the race between destroy()/a format-changing src swap and the
+  // async CDN script load: player-factory.ts no longer waits on `onReady`
+  // before returning, so `destroy()` can land here while `setup()` is still
+  // awaiting `loadSDK()`. Checked right after that await, before `new
+  // this.Hls(...)` - if set, the hls.js instance (and its manifest/segment
+  // requests) is simply never created, instead of being created and
+  // orphaned. See result.md "decisões de design".
+  private destroyed = false;
+  // The most recently requested src. `load()` can be called before `setup()`
+  // has finished (same race as above) - it always records the intent here,
+  // and only calls into hls.js directly once `this.hls` exists. `setup()`
+  // applies it once, at the end, so a rapid A -> B -> C swap while the SDK
+  // is still loading only ever loads C.
+  private pendingSrc?: string;
 
   constructor(private element: HTMLVideoElement) {
     log("Powered by Hls.js");
@@ -42,6 +56,9 @@ export class HlsPlayer implements IMediaPlayer {
     if (isUndefined(this.Hls)) {
       this.Hls = await loadSDK(this.sdkSrc, 'Hls')
     }
+
+    if (this.destroyed) return;
+
     this.hls = new this.Hls(this.config);
     this.hls.attachMedia(this.nativeEl);
 
@@ -82,6 +99,20 @@ export class HlsPlayer implements IMediaPlayer {
         this.tracksChangeCallback(tracks);
       }
     });
+
+    if (this.pendingSrc) {
+      this.applyLoad(this.pendingSrc);
+    }
+  }
+
+  private applyLoad(src: string) {
+    if (this.Hls?.isSupported()) {
+      this.hls.loadSource(src);
+    } else if (this.nativeEl.canPlayType("application/vnd.apple.mpegurl")) {
+      this.nativeEl.src = src;
+    } else {
+      console.error("HLS não suportado no navegador.");
+    }
   }
 
   onTracksChange(callback: (tracks: MediaTracks) => void) {
@@ -109,20 +140,17 @@ export class HlsPlayer implements IMediaPlayer {
   }
 
   destroy() {
+    this.destroyed = true;
+
     if (this.hls) {
       this.hls.destroy();
       this.hls = null;
     }
   }
 
-  load(src: string){
-    if (!this.Hls) return;
-    if (this.Hls?.isSupported()) {
-      this.hls.loadSource(src);
-    } else if (this.nativeEl.canPlayType("application/vnd.apple.mpegurl")) {
-      this.nativeEl.src = src;
-    } else {
-      console.error("HLS não suportado no navegador.");
-    }
+  load(src: string) {
+    this.pendingSrc = src;
+    if (this.destroyed || !this.hls) return;
+    this.applyLoad(src);
   }
 }
