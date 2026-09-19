@@ -11,13 +11,6 @@ export default defineConfig({
   grepInvert: process.env.E2E_NETWORK ? undefined : /@network/,
   grep: process.env.E2E_NETWORK ? /@network/ : undefined,
   fullyParallel: true,
-  // Real video decode under many concurrent Chromium instances causes CPU
-  // contention that makes hls.js/dash.js emit transient, non-fatal buffer
-  // stall errors (see result.md "Descobertas" - hls-player.ts/dash-player.ts
-  // forward every SDK error, fatal or not, as the element's `error` event).
-  // A couple of workers keeps the suite deterministic without going fully
-  // serial.
-  workers: 2,
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['github']] : [['list']],
