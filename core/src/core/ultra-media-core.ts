@@ -214,9 +214,16 @@ export class UltraMediaCore extends Emitter {
     // Single error policy for every engine, moved verbatim from
     // ultra-media-element.ts's initializePlayer(): only a fatal error
     // becomes `error`; anything recoverable becomes `warning`, same detail.
+    // The generation check must gate the emit itself, not just
+    // rejectReady() - an async error callback from a superseded/destroyed
+    // load (e.g. player-factory.ts's CONTAINER_REQUIRED stub, deferred onto
+    // a microtask, or hls.js/dash.js's own async SDK error events) must not
+    // reach the host at all once its load no longer applies (see
+    // result-cycle3.md, defect 3).
     player.onError?.((error: MediaPlayerError) => {
+      if (generation !== this.generation) return;
       this.emit(error.fatal ? 'error' : 'warning', error);
-      if (error.fatal && generation === this.generation) {
+      if (error.fatal) {
         this.rejectReady(error);
       }
     });

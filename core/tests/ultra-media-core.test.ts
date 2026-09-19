@@ -398,6 +398,72 @@ describe('UltraMediaCore: stale tracks are cleared on teardown (cycle 2, defect 
   });
 });
 
+describe('UltraMediaCore: superseded/destroyed loads never emit error/warning (cycle 3, defect 3)', () => {
+  it('a fatal error arriving after destroy() is not emitted', () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(video());
+    const errorHandler = jest.fn();
+    const warningHandler = jest.fn();
+    core.addEventListener('error', errorHandler);
+    core.addEventListener('warning', warningHandler);
+    core.load('a.mp4');
+
+    core.destroy();
+    player.emitError({ fatal: true, category: 'otherError', code: 'LATE', message: 'late', engine: 'video/mp4' });
+
+    expect(errorHandler).not.toHaveBeenCalled();
+    expect(warningHandler).not.toHaveBeenCalled();
+  });
+
+  it('a non-fatal error arriving after destroy() is not emitted either', () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(video());
+    const warningHandler = jest.fn();
+    core.addEventListener('warning', warningHandler);
+    core.load('a.mp4');
+
+    core.destroy();
+    player.emitError({ fatal: false, category: 'otherError', code: 'LATE', message: 'late', engine: 'video/mp4' });
+
+    expect(warningHandler).not.toHaveBeenCalled();
+  });
+
+  it('an error from a load() already superseded by a newer load() is not emitted, but the new load\'s errors still are', () => {
+    const first = fakePlayer();
+    const second = fakePlayer();
+    mockFactoryReturning(first, second);
+    const core = new UltraMediaCore(video());
+    const errorHandler = jest.fn();
+    core.addEventListener('error', errorHandler);
+
+    core.load('a.m3u8'); // first player
+    core.load('b.mp4'); // format change -> teardownPlayer() destroys `first`, wires `second`
+
+    first.emitError({ fatal: true, category: 'otherError', code: 'STALE', message: 'stale', engine: 'hls.js' });
+    expect(errorHandler).not.toHaveBeenCalled();
+
+    second.emitError({ fatal: true, category: 'otherError', code: 'FRESH', message: 'fresh', engine: 'video/mp4' });
+    expect(errorHandler).toHaveBeenCalledTimes(1);
+    expect(errorHandler).toHaveBeenCalledWith({ type: 'error', detail: expect.objectContaining({ code: 'FRESH' }) });
+  });
+
+  it('same-format reload (player reused) still lets a later error through - the guard only blocks stale generations', () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(video());
+    const errorHandler = jest.fn();
+    core.addEventListener('error', errorHandler);
+
+    core.load('a.mp4');
+    core.load('b.mp4'); // same format - player reused, generation still bumps, wireUp() re-registers onError
+
+    player.emitError({ fatal: true, category: 'otherError', code: 'X', message: 'm', engine: 'video/mp4' });
+    expect(errorHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('UltraMediaCore: leaves the <video> as it found it, except src (cycle 2, defect 4)', () => {
   it('destroy() removes the data-type attribute PlayerFactory wrote', () => {
     const player = fakePlayer();
