@@ -114,7 +114,9 @@ export class HlsPlayer implements IMediaPlayer {
     // nor `warning`. Removed in destroy() before hls.js tears down its own
     // attachment, so teardown itself can't trigger this and double-report.
     this.nativeErrorHandler = () => {
-      if (this.errorCallback) {
+      // No MediaError = a stale event for a source a newer load superseded
+      // (the load algorithm resets `error` to null) - not this load's.
+      if (this.errorCallback && this.nativeEl.error) {
         this.errorCallback(mapNativeMediaError(this.nativeEl.error, 'hls.js', this.pendingSrc ?? this.nativeEl.currentSrc));
       }
     };

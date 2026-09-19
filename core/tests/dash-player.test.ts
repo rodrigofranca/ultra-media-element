@@ -254,6 +254,20 @@ describe('DashPlayer native <video> error forwarding', () => {
     expect(onError).toHaveBeenCalledTimes(1);
   });
 
+  // A new load resets `element.error` to null, so an `error` event still
+  // queued for the superseded source arrives with no MediaError - it must
+  // not be reported as the current load's failure.
+  it('ignores a stale native error event that carries no MediaError', async () => {
+    const { player, nativeEl } = await setupPlayer();
+    const onError = jest.fn();
+    player.onError(onError);
+
+    Object.defineProperty(nativeEl, 'error', { value: null, configurable: true });
+    nativeEl.dispatchEvent(new Event('error'));
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it('stops listening for the native error once destroyed (no spurious event on teardown)', async () => {
     const { player, nativeEl } = await setupPlayer();
     const onError = jest.fn();

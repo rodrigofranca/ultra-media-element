@@ -201,7 +201,9 @@ export class DashPlayer implements IMediaPlayer {
     // of dash.js's internal wiring. Removed in destroy() before dash.js
     // tears its own attachment down, so teardown itself can't trigger this.
     this.nativeErrorHandler = () => {
-      if (this.errorCallback) {
+      // No MediaError = a stale event for a source a newer load superseded
+      // (the load algorithm resets `error` to null) - not this load's.
+      if (this.errorCallback && this.nativeEl.error) {
         this.errorCallback(mapNativeMediaError(this.nativeEl.error, 'dash.js', this.pendingSrc ?? this.nativeEl.currentSrc));
       }
     };
