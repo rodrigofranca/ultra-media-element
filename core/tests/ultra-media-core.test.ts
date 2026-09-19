@@ -506,13 +506,12 @@ describe('UltraMediaCore: leaves the <video> as it found it, except src (cycle 2
     expect(el.dataset.type).toBe('do-host');
   });
 
-  // Generic snapshot/restore, not a youtube-player.ts special case: the core
-  // captures `style.display` when it attaches and restores exactly that on
-  // teardown - the only DOM property any current player (YouTubePlayer,
-  // hiding the native <video> while its iframe is shown) writes outside
-  // `src`. A player-specific reset-to-`''` used to wipe a host inline style
-  // like `style="display:block"` instead of restoring it.
-  it("restores style.display to what it was before attaching, even after a player hides the element (destroy())", () => {
+  // The core itself never writes inline style on the host's element: only a
+  // player that changes it (YouTubePlayer, hiding the native <video> behind
+  // its iframe) undoes its own write - see youtube-player.test.ts. A
+  // constructor-time snapshot restored here used to clobber a change the
+  // host made while the core was attached.
+  it("keeps a style.display change the host made while attached (destroy())", () => {
     const player = fakePlayer();
     mockFactoryReturning(player);
     const el = video();
@@ -520,25 +519,26 @@ describe('UltraMediaCore: leaves the <video> as it found it, except src (cycle 2
     const core = new UltraMediaCore(el);
 
     core.load('a.mp4');
-    el.style.display = 'none'; // simulates a player (e.g. YouTubePlayer) hiding the native element while loaded
+    el.style.display = 'flex'; // the host's own change, mid-playback
 
     core.destroy();
-    expect(el.style.display).toBe('block');
+    expect(el.style.display).toBe('flex');
   });
 
-  it('restores style.display on a format swap too (teardownPlayer()), not just destroy()', () => {
+  it('keeps a host style.display change on a format swap too, and never adds a style attribute of its own', () => {
     const first = fakePlayer();
     const second = fakePlayer();
     mockFactoryReturning(first, second);
     const el = video();
-    el.style.display = 'block';
     const core = new UltraMediaCore(el);
 
     core.load('a.m3u8');
-    el.style.display = 'none';
-
     core.load('b.mp4'); // format change -> teardownPlayer()
-    expect(el.style.display).toBe('block');
+    expect(el.hasAttribute('style')).toBe(false);
+
+    el.style.display = 'flex';
+    core.destroy();
+    expect(el.style.display).toBe('flex');
   });
 
   it('a second UltraMediaCore on an already-attached <video> throws a clear error', () => {

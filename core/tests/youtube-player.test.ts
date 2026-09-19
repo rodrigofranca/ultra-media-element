@@ -54,6 +54,48 @@ describe('YouTubePlayer', () => {
     expect(window.YT.Player).toHaveBeenCalled();
   });
 
+  // The player hides the native <video> behind its iframe, so it - not the
+  // core - owns undoing exactly that write, against the value it found when
+  // it hid the element (not a constructor-time snapshot).
+  async function loadedPlayer(element: HTMLVideoElement) {
+    const container = document.createElement('div');
+    const player = new YouTubePlayer(element, container);
+    window.YT.Player = jest.fn().mockImplementation(() => ({
+      playVideo: jest.fn(), pauseVideo: jest.fn(), destroy: jest.fn(),
+    }));
+    player.load('https://www.youtube.com/watch?v=VIDEO_ID123');
+    await player.onReady;
+    return player;
+  }
+
+  it("restores the host's inline display on destroy()", async () => {
+    const element = createVideoElement();
+    element.setAttribute('style', 'display: block;');
+    const player = await loadedPlayer(element);
+    expect(element.style.display).toBe('none');
+
+    player.destroy();
+    expect(element.style.display).toBe('block');
+  });
+
+  it('leaves no style attribute behind on an element that had none', async () => {
+    const element = createVideoElement();
+    const player = await loadedPlayer(element);
+    expect(element.style.display).toBe('none');
+
+    player.destroy();
+    expect(element.hasAttribute('style')).toBe(false);
+  });
+
+  it('keeps a display value the host set while the iframe was shown', async () => {
+    const element = createVideoElement();
+    const player = await loadedPlayer(element);
+
+    element.style.display = 'flex';
+    player.destroy();
+    expect(element.style.display).toBe('flex');
+  });
+
   // cycle 2, defect 2: the real <ultra-media> shell passes its own shadow
   // root as `container` (not itself) so the iframe never becomes an
   // observable child of the host element (el.children, page CSS/selectors,

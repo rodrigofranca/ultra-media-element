@@ -88,6 +88,7 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
   private lastCurrentTime = 0;
   private seeking = false;
   private isDestroyed = false;
+  private hiddenDisplay: { value: string; hadStyleAttribute: boolean } | null = null;
   private errorCallback?: (error: MediaPlayerError) => void;
   private currentSrc = '';
   // Bumped by every load(). Each load() registers its own
@@ -344,7 +345,12 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
         this.isDestroyed = false; // reset: destroy interno para recarga, não cancelamento
       }
 
-      // Hide the original video element
+      // Hide the original video element, remembering what was there so
+      // destroy() can put it back (see restoreElementDisplay()).
+      this.hiddenDisplay = {
+        value: this.element.style.display,
+        hadStyleAttribute: this.element.hasAttribute('style'),
+      };
       this.element.style.display = 'none';
 
       this.iframe = document.createElement('iframe');
@@ -422,11 +428,22 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
       this.iframe = null;
     }
 
-    // Restoring `style.display` is UltraMediaCore's job now, not this
-    // player's - resetting it to '' here used to wipe a host's own inline
-    // style (e.g. `style="display:block"`) instead of restoring it. The
-    // core snapshots it once at construction and restores exactly that,
-    // generically, on every teardown path (see result-cycle3.md, defect 1).
+    this.restoreElementDisplay();
+  }
+
+  // Undo exactly the write load() made: only while the element is still
+  // hidden by us (a value the host set meanwhile wins), back to the inline
+  // value found at hide time, and without leaving an empty `style=""` on an
+  // element that had no style attribute.
+  private restoreElementDisplay(): void {
+    const hidden = this.hiddenDisplay;
+    this.hiddenDisplay = null;
+    if (!hidden || this.element.style.display !== 'none') return;
+
+    this.element.style.display = hidden.value;
+    if (!hidden.hadStyleAttribute && this.element.getAttribute('style') === '') {
+      this.element.removeAttribute('style');
+    }
   }
 
   private onPlayerReady(): void {
