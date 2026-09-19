@@ -112,3 +112,17 @@ The `/docs` folder contains comprehensive project analysis and implementation pl
 - Event mapping: YouTube API events are translated to standard media events (play, pause, timeupdate, ended)
 - Player factory uses format detection to automatically select appropriate player implementation
 - Media tracks integration provides standardized audio/video track switching across all player types
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as local markdown files under `.scratch/<feature-slug>/` in this repo. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary; label strings equal role names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), recorded as a `Status:` line in each issue file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
