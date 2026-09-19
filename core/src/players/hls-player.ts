@@ -45,6 +45,11 @@ export class HlsPlayer implements IMediaPlayer {
   // is still loading only ever loads C.
   private pendingSrc?: string;
   private nativeErrorHandler?: () => void;
+  // Set when applyLoad() takes the native-HLS-without-MSE branch (Safari,
+  // older Smart TVs): `hls.destroy()` alone doesn't know `nativeEl.src` was
+  // set outside its own API, so it never cleaned it up - destroy() must
+  // also tear down that path explicitly (see result-cycle3.md, defect 2).
+  private usingNativeFallback = false;
 
   constructor(private element: HTMLVideoElement) {
     log("Powered by Hls.js");
@@ -122,8 +127,10 @@ export class HlsPlayer implements IMediaPlayer {
 
   private applyLoad(src: string) {
     if (this.Hls?.isSupported()) {
+      this.usingNativeFallback = false;
       this.hls.loadSource(src);
     } else if (this.nativeEl.canPlayType("application/vnd.apple.mpegurl")) {
+      this.usingNativeFallback = true;
       this.nativeEl.src = src;
     } else {
       console.error("HLS não suportado no navegador.");
@@ -165,6 +172,17 @@ export class HlsPlayer implements IMediaPlayer {
     if (this.hls) {
       this.hls.destroy();
       this.hls = null;
+    }
+
+    // hls.js's own destroy() has no idea nativeEl.src was set directly by
+    // the native-HLS-without-MSE branch above - undo that ourselves, same
+    // as video-player.ts: removeAttribute + load() lets the resource
+    // selection algorithm reset to NETWORK_EMPTY silently, instead of the
+    // native <video> being left with a source and downloading it.
+    if (this.usingNativeFallback) {
+      this.usingNativeFallback = false;
+      this.nativeEl.removeAttribute('src');
+      this.nativeEl.load();
     }
   }
 
