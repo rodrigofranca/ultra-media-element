@@ -67,7 +67,14 @@ test.describe('public contract: statics', () => {
 });
 
 test.describe('public contract: full prototype member inventory', () => {
-  test('exactly the 93 documented members exist (14 own + 79 inherited)', async ({ page }) => {
+  // ADR-0001 Fase 2: `initializePlayer` moved into UltraMediaCore's
+  // load()/wireUp() (no longer a method on the element at all); the element
+  // gained `createCore`/`forwardCoreEvent`/`syncMediaTracks` in its place -
+  // internal detail, not public contract (docs/public-api.md never promised
+  // specific private method names), so this list is updated accordingly -
+  // everything else (own public surface + all 79 inherited members) is
+  // unchanged, which is exactly what the rest of this file's tests confirm.
+  test('exactly the 95 documented members exist (16 own + 79 inherited)', async ({ page }) => {
     await gotoPlayer(page);
     const names = await page.evaluate(() => {
       const Ctor = customElements.get('ultra-media') as any;
@@ -84,8 +91,8 @@ test.describe('public contract: full prototype member inventory', () => {
 
     const OWN = [
       'setupTrackListeners', 'connectedCallback', 'disconnectedCallback', 'destroy',
-      'attributeChangedCallback', 'applySrcChange', 'initializePlayer', 'removeAllMediaTracks',
-      'changeSource', 'getCurrentFormat',
+      'attributeChangedCallback', 'applySrcChange', 'createCore', 'forwardCoreEvent',
+      'syncMediaTracks', 'removeAllMediaTracks', 'changeSource', 'getCurrentFormat',
     ];
     const SUPER_MEDIA_OWN = ['loadComplete', 'isLoaded', 'nativeEl', 'defaultMuted', 'src', 'preload'];
     const MEDIA_TRACKS = [
