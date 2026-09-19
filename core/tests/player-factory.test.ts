@@ -111,4 +111,26 @@ describe("PlayerFactory", () => {
       expect.objectContaining({ fatal: true, code: 'CONTAINER_REQUIRED', engine: 'youtube' }),
     ]);
   });
+
+  // cycle 3, defect 1: create() used to write `element.dataset.type` as its
+  // only way to report the resolved engine back to UltraMediaCore - on a
+  // <video> owned by a host, that clobbered any `data-type` attribute the
+  // host already had for its own purposes. resolveEngine() (exposed below)
+  // lets a caller learn the same resolution without touching the DOM at
+  // all, so create() no longer needs to write anything there.
+  it("does not write a data-type attribute on the element - engine identity never touches the DOM", () => {
+    const element = createVideoElement();
+    element.dataset.type = 'do-host';
+
+    PlayerFactory.create({ src: "https://example.com/video.mp4", element });
+
+    expect(element.dataset.type).toBe('do-host');
+  });
+
+  it("resolveEngine() returns the same engine name create() would pick, without creating a player", () => {
+    expect(PlayerFactory.resolveEngine("https://example.com/video.mp4")).toBe('video/mp4');
+    expect(PlayerFactory.resolveEngine("https://example.com/video.m3u8")).toBe('hls.js');
+    expect(PlayerFactory.resolveEngine("https://example.com/video.mpd")).toBe('dash.js');
+    expect(PlayerFactory.resolveEngine("https://www.youtube.com/watch?v=VIDEO_ID", undefined, Format.YOUTUBE)).toBe('youtube');
+  });
 });

@@ -422,8 +422,11 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
       this.iframe = null;
     }
 
-    // Restore the original video element's display
-    this.element.style.display = '';
+    // Restoring `style.display` is UltraMediaCore's job now, not this
+    // player's - resetting it to '' here used to wipe a host's own inline
+    // style (e.g. `style="display:block"`) instead of restoring it. The
+    // core snapshots it once at construction and restores exactly that,
+    // generically, on every teardown path (see result-cycle3.md, defect 1).
   }
 
   private onPlayerReady(): void {

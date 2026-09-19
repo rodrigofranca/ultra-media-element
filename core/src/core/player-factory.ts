@@ -92,7 +92,12 @@ export class PlayerFactory {
       throw new Error(`No engine registered for: ${engineType}`);
     }
 
-    element.dataset.type = engineType;
+    // No longer writes `element.dataset.type` here - a <video> owned by a
+    // host may already carry its own `data-type` attribute for unrelated
+    // reasons, and this used to clobber it (and later delete it outright on
+    // teardown). UltraMediaCore now learns the engine via resolveEngine()
+    // below directly, not by reading it back off the DOM (see
+    // result-cycle3.md, defect 1).
     const player = engine(element as HTMLVideoElement, container, src);
 
     // Call load() synchronously instead of chaining it onto `onReady`: every
@@ -108,7 +113,10 @@ export class PlayerFactory {
     return player;
   }
 
-  private static resolveEngine(src: string, formats: AvailableFormats, explicitFormat?: Format): string {
+  // Public so UltraMediaCore can learn the resolved engine name without
+  // reading it back off the <video> - the exact same resolution create()
+  // itself just used (see result-cycle3.md, defect 1).
+  static resolveEngine(src: string, formats: AvailableFormats = DEFAULT_FORMATS, explicitFormat?: Format): string {
     const format = explicitFormat ?? detectFormat(src);
 
     if (!format) {

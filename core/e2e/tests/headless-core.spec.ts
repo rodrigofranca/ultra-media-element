@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../utils/hermetic';
 import fixtureManifest from '../fixtures/manifest.json' with { type: 'json' };
+import { stubYouTubeIframeApi } from '../utils/youtube-stub';
 
 // ADR-0001 delivery plan step 2: drives UltraMediaCore on a bare <video>
 // with *no custom element registered at all* - the actual proof that the
@@ -197,14 +198,18 @@ test.describe('headless UltraMediaCore on a bare <video>', () => {
   });
 });
 
-// cycle 2, defect 4: PlayerFactory.create() writes `element.dataset.type`
-// but nothing removed it - `getCurrentFormatFromElement(media)` (and
-// anything else reading `dataset.type` straight off the <video>) kept
-// reporting the old format forever, even after destroy(). Compares the
-// <video>'s own attributes/inline style before `new UltraMediaCore()` and
-// after `destroy()` - must be identical (the rule: "media ends up exactly
-// as the core found it" - src included, since destroy() also fully clears
-// it, per defect 1).
+// cycle 2, defect 4: PlayerFactory.create() used to write `element.
+// dataset.type` but nothing removed it - `getCurrentFormatFromElement
+// (media)` (and anything else reading `dataset.type` straight off the
+// <video>) kept reporting the old format forever, even after destroy().
+// Cycle 3, defect 1 went further: PlayerFactory doesn't write data-type at
+// all any more (the core learns the engine without touching the DOM), and
+// UltraMediaCore now generically snapshots/restores the one other DOM
+// property a player can change outside `src` (style.display, in
+// YouTubePlayer's case). Compares the <video>'s own attributes/inline style
+// before `new UltraMediaCore()` and after `destroy()` - must be identical
+// (the rule: "media ends up exactly as the core found it" - src included,
+// since destroy() also fully clears it, per defect 1).
 test.describe('destroy() leaves the <video> exactly as it found it (cycle 2, defect 4)', () => {
   const CASES = [
     { engine: 'hls', fixture: HLS_FIXTURE },
@@ -237,6 +242,91 @@ test.describe('destroy() leaves the <video> exactly as it found it (cycle 2, def
       expect(result.after).toEqual(result.before);
     });
   }
+
+  // cycle 3, defect 1: same proof, but seeded with a host's own
+  // pre-existing attributes - the literal scenario the brief describes
+  // (`<video data-type="do-host" style="display:block"
+  // crossorigin="anonymous">`). Before this fix, PlayerFactory clobbered
+  // data-type with its own engine name and teardownPlayer() deleted it
+  // outright on teardown; YouTubePlayer's destroy() reset style.display to
+  // '' instead of the host's original 'block'.
+  test.describe('destroy() preserves a host\'s own pre-existing attributes (cycle 3, defect 1)', () => {
+    async function seedHostAttributes(page: Page): Promise<void> {
+      await page.evaluate(() => {
+        const video = document.querySelector('#video') as HTMLVideoElement;
+        video.setAttribute('data-type', 'do-host');
+        video.style.display = 'block';
+        video.setAttribute('crossorigin', 'anonymous');
+      });
+    }
+
+    const ATTR_CASES = [
+      { engine: 'hls', fixture: HLS_FIXTURE },
+      { engine: 'dash', fixture: DASH_FIXTURE },
+      { engine: 'mp4', fixture: MP4_FIXTURE },
+    ];
+
+    for (const { engine, fixture } of ATTR_CASES) {
+      test(`(${engine})`, async ({ page }) => {
+        await gotoCoreOnlyPage(page);
+        await seedHostAttributes(page);
+
+        const result = await page.evaluate(async ({ fixture }) => {
+          const video = document.querySelector('#video') as HTMLVideoElement;
+          const snapshot = () => ({
+            attributes: [...video.attributes].map((a) => `${a.name}=${a.value}`).sort(),
+            inlineStyle: video.getAttribute('style'),
+          });
+
+          const before = snapshot();
+
+          const core = new (window as any).UltraMediaCore(video);
+          core.load(fixture);
+          await core.ready;
+          await new Promise((r) => setTimeout(r, 300));
+          core.destroy();
+
+          return { before, after: snapshot() };
+        }, { fixture });
+
+        expect(result.after).toEqual(result.before);
+        // Sanity-check the seed actually landed, so a broken seed can't
+        // make this pass vacuously.
+        expect(result.before.attributes).toEqual(expect.arrayContaining(['data-type=do-host', 'crossorigin=anonymous']));
+        expect(result.before.inlineStyle).toContain('display');
+      });
+    }
+
+    test('(youtube, via the hermetic IFrame API stub)', async ({ page }) => {
+      await gotoCoreOnlyPage(page);
+      await stubYouTubeIframeApi(page);
+      await seedHostAttributes(page);
+      await page.evaluate(() => {
+        document.body.appendChild(document.createElement('div')).id = 'yt-container';
+      });
+
+      const result = await page.evaluate(async () => {
+        const video = document.querySelector('#video') as HTMLVideoElement;
+        const container = document.querySelector('#yt-container') as HTMLDivElement;
+        const snapshot = () => ({
+          attributes: [...video.attributes].map((a) => `${a.name}=${a.value}`).sort(),
+          inlineStyle: video.getAttribute('style'),
+        });
+
+        const before = snapshot();
+
+        const core = new (window as any).UltraMediaCore(video, { container });
+        core.load('https://www.youtube.com/watch?v=AAAAAAAAAAA');
+        await core.ready;
+        await new Promise((r) => setTimeout(r, 300));
+        core.destroy();
+
+        return { before, after: snapshot() };
+      });
+
+      expect(result.after).toEqual(result.before);
+    });
+  });
 
   // The unit-level proof (tests/ultra-media-core.test.ts) already covers the
   // throw itself against a fake player; this confirms it holds against a

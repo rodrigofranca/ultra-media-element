@@ -111,6 +111,15 @@ export class UltraMediaCore extends Emitter {
   private _audioTracks: readonly MediaTrack[] = [];
   private _audioTrack: string | null = null;
 
+  // Snapshot of the one DOM property outside `src` any current player
+  // writes on the shared element (YouTubePlayer hides the native <video>
+  // while its iframe is shown) - restored generically in teardownPlayer(),
+  // not by the player itself, so it applies on every teardown path (destroy()
+  // *and* a format swap mid-lifecycle), and so a host's own inline
+  // `style.display` survives instead of being reset to '' (see
+  // result-cycle3.md, defect 1).
+  private readonly initialStyleDisplay: string;
+
   constructor(media: HTMLMediaElement, options: UltraMediaCoreOptions = {}) {
     super();
     if (attachedMedia.has(media)) {
@@ -119,6 +128,7 @@ export class UltraMediaCore extends Emitter {
     attachedMedia.add(media);
     this.media = media;
     this.options = options;
+    this.initialStyleDisplay = media.style.display;
     this.ready = this.freshReadyPromise();
   }
 
@@ -188,7 +198,11 @@ export class UltraMediaCore extends Emitter {
         container: this.options.container,
         format: newFormat ?? undefined,
       });
-      this._engine = (this.media as HTMLVideoElement).dataset?.type ?? null;
+      // Learned directly from the same resolution PlayerFactory.create()
+      // just used, not read back off the <video> - the core no longer
+      // writes data-type on a <video> it doesn't own (see
+      // result-cycle3.md, defect 1).
+      this._engine = PlayerFactory.resolveEngine(src, undefined, newFormat ?? undefined);
     }
 
     this.wireUp(this.player, generation);
@@ -244,10 +258,13 @@ export class UltraMediaCore extends Emitter {
     this._audioTracks = [];
     this._rendition = 'auto';
     this._audioTrack = null;
-    // PlayerFactory.create() is the only thing that writes this - not a
-    // residue a consumer reading `media` afterwards should see (see
-    // result-cycle2.md, defect 4). A no-op when nothing was ever created.
-    delete this.media.dataset.type;
+    // Restore whatever DOM state a player may have changed outside `src`
+    // back to what this core found when it attached - a format swap must
+    // undo this too, not just destroy() (see result-cycle3.md, defect 1).
+    // PlayerFactory/players never write data-type or any other data-*
+    // attribute on the element any more, so there is nothing else to
+    // restore here today.
+    this.media.style.display = this.initialStyleDisplay;
     // A format swap or destroy() must not leave the previous engine's
     // tracks visible - the new engine (if any) may never report its own
     // (e.g. the native players don't call onTracksChange at all), so this

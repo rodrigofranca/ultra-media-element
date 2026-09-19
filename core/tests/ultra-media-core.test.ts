@@ -9,7 +9,10 @@ import type { IMediaPlayer, MediaPlayerError, MediaTracks } from '../src/core/me
 // the base-class stand-ins ultra-media-element-lifecycle.test.ts does.
 jest.mock('../src/core/player-factory', () => {
   const actual = jest.requireActual('../src/core/player-factory') as any;
-  return { ...actual, PlayerFactory: { create: jest.fn() } };
+  // resolveEngine() stays real - UltraMediaCore.load() calls it directly
+  // (cycle 3, defect 1) to learn the engine name without reading it back
+  // off the DOM, so it needs the actual format-detection logic, not a mock.
+  return { ...actual, PlayerFactory: { create: jest.fn(), resolveEngine: actual.PlayerFactory.resolveEngine } };
 });
 
 function deferred<T = void>() {
@@ -46,9 +49,11 @@ function fakePlayer(onReady: Promise<void> = Promise.resolve()): FakePlayer {
 
 function mockFactoryReturning(...players: FakePlayer[]) {
   let i = 0;
-  (PlayerFactory.create as jest.Mock).mockImplementation((({ src, element, format }: any) => {
-    const engineByFormat: Record<string, string> = { hls: 'hls.js', dash: 'dash.js', mp4: 'video/mp4', audio: 'audio/mp3', youtube: 'youtube' };
-    element.dataset.type = engineByFormat[format] ?? (src.includes('.m3u8') ? 'hls.js' : src.includes('.mpd') ? 'dash.js' : 'video/mp4');
+  // Doesn't touch `element.dataset.type` - the real PlayerFactory.create()
+  // doesn't either any more (cycle 3, defect 1); `core.engine` comes from
+  // the real (unmocked) PlayerFactory.resolveEngine() instead, exercised
+  // for real by these tests too.
+  (PlayerFactory.create as jest.Mock).mockImplementation((() => {
     return players[Math.min(i++, players.length - 1)];
   }) as any);
 }
@@ -464,18 +469,76 @@ describe('UltraMediaCore: superseded/destroyed loads never emit error/warning (c
   });
 });
 
-describe('UltraMediaCore: leaves the <video> as it found it, except src (cycle 2, defect 4)', () => {
-  it('destroy() removes the data-type attribute PlayerFactory wrote', () => {
+describe('UltraMediaCore: leaves the <video> as it found it, except src (cycle 2 defect 4, cycle 3 defect 1)', () => {
+  // cycle 3, defect 1: PlayerFactory used to write `element.dataset.type`
+  // (later deleted by teardownPlayer()) as its only way to report the
+  // engine back to UltraMediaCore - on a host `<video>` that already had
+  // its own `data-type` attribute for unrelated reasons, this clobbered it
+  // and then deleted it outright, instead of restoring the host's original
+  // value. The core now learns the engine directly from
+  // PlayerFactory.resolveEngine(), the same resolution create() itself
+  // used, and never touches data-* on the element at all.
+  it('never writes a data-type attribute on the host <video> - core.engine is the source of truth, not the DOM', () => {
     const player = fakePlayer();
-    mockFactoryReturning(player); // writes element.dataset.type, same as the real PlayerFactory
+    mockFactoryReturning(player);
     const el = video();
     const core = new UltraMediaCore(el);
 
     core.load('a.mp4');
-    expect(el.dataset.type).toBe('video/mp4');
+    expect(el.dataset.type).toBeUndefined();
+    expect(core.engine).toBe('video/mp4');
 
     core.destroy();
     expect(el.dataset.type).toBeUndefined();
+  });
+
+  it("preserves a data-* attribute the host set before attaching, through load() and destroy()", () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const el = video();
+    el.dataset.type = 'do-host';
+    const core = new UltraMediaCore(el);
+
+    core.load('a.mp4');
+    expect(el.dataset.type).toBe('do-host');
+
+    core.destroy();
+    expect(el.dataset.type).toBe('do-host');
+  });
+
+  // Generic snapshot/restore, not a youtube-player.ts special case: the core
+  // captures `style.display` when it attaches and restores exactly that on
+  // teardown - the only DOM property any current player (YouTubePlayer,
+  // hiding the native <video> while its iframe is shown) writes outside
+  // `src`. A player-specific reset-to-`''` used to wipe a host inline style
+  // like `style="display:block"` instead of restoring it.
+  it("restores style.display to what it was before attaching, even after a player hides the element (destroy())", () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const el = video();
+    el.style.display = 'block';
+    const core = new UltraMediaCore(el);
+
+    core.load('a.mp4');
+    el.style.display = 'none'; // simulates a player (e.g. YouTubePlayer) hiding the native element while loaded
+
+    core.destroy();
+    expect(el.style.display).toBe('block');
+  });
+
+  it('restores style.display on a format swap too (teardownPlayer()), not just destroy()', () => {
+    const first = fakePlayer();
+    const second = fakePlayer();
+    mockFactoryReturning(first, second);
+    const el = video();
+    el.style.display = 'block';
+    const core = new UltraMediaCore(el);
+
+    core.load('a.m3u8');
+    el.style.display = 'none';
+
+    core.load('b.mp4'); // format change -> teardownPlayer()
+    expect(el.style.display).toBe('block');
   });
 
   it('a second UltraMediaCore on an already-attached <video> throws a clear error', () => {

@@ -65,11 +65,13 @@ jest.mock('media-tracks', () => ({
 
 // player-factory.ts itself hits the network (loadSDK); these tests only
 // care about *when* the core asks it for a player, so it's replaced with a
-// tracking stub - `getCurrentFormatFromElement` stays real since it's used
-// elsewhere and doesn't touch the network.
+// tracking stub. resolveEngine() stays real - UltraMediaCore.load() calls
+// it directly (cycle 3, defect 1) instead of reading the engine back off
+// the <video>'s data-type, which real PlayerFactory.create() no longer
+// writes.
 jest.mock('../src/core/player-factory', () => {
   const actual = jest.requireActual('../src/core/player-factory') as any;
-  return { ...actual, PlayerFactory: { create: jest.fn() } };
+  return { ...actual, PlayerFactory: { create: jest.fn(), resolveEngine: actual.PlayerFactory.resolveEngine } };
 });
 
 if (!customElements.get('ultra-media')) {
@@ -89,13 +91,11 @@ type CreatedPlayer = { src: string; player: ReturnType<typeof fakePlayer> };
 /**
  * Stubs PlayerFactory.create() to record every player it's asked to build,
  * without touching the network - lets these tests assert *how many* players
- * got created/destroyed and with which src, the way the real factory would
- * report format via `element.dataset.type`.
+ * got created/destroyed and with which src.
  */
 function trackingPlayerFactory(): CreatedPlayer[] {
   const created: CreatedPlayer[] = [];
-  (PlayerFactory.create as jest.Mock).mockImplementation((({ src, element }: { src: string; element: HTMLVideoElement }) => {
-    element.dataset.type = src.includes('.m3u8') ? 'hls.js' : src.includes('.mpd') ? 'dash.js' : 'video/mp4';
+  (PlayerFactory.create as jest.Mock).mockImplementation((({ src }: { src: string; element: HTMLVideoElement }) => {
     const player = fakePlayer();
     created.push({ src, player });
     return player;
@@ -356,8 +356,7 @@ describe('UltraMediaElement passes its shadow root as the core container (cycle 
   // YouTubePlayer mounts the iframe wherever `container` actually is.
   it('createCore builds the core with { container: el.shadowRoot }, not the element itself', () => {
     const captured: unknown[] = [];
-    (PlayerFactory.create as jest.Mock).mockImplementation((({ src, element, container }: any) => {
-      element.dataset.type = 'youtube';
+    (PlayerFactory.create as jest.Mock).mockImplementation((({ container }: any) => {
       captured.push(container);
       return fakePlayer();
     }) as any);

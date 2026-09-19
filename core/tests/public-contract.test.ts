@@ -46,7 +46,10 @@ jest.mock('media-tracks', () => ({
 
 jest.mock('../src/core/player-factory', () => {
   const actual = jest.requireActual('../src/core/player-factory') as any;
-  return { ...actual, PlayerFactory: { create: jest.fn() } };
+  // resolveEngine() stays real - UltraMediaCore.load() calls it directly
+  // (cycle 3, defect 1) instead of reading the engine back off the
+  // <video>'s data-type, which real PlayerFactory.create() no longer writes.
+  return { ...actual, PlayerFactory: { create: jest.fn(), resolveEngine: actual.PlayerFactory.resolveEngine } };
 });
 
 if (!customElements.get('ultra-media')) {
@@ -100,12 +103,12 @@ describe('own methods exist with the right shape', () => {
 
   // cycle 2, defect 4: getCurrentFormat() used to read nativeEl.dataset.type
   // directly (via getCurrentFormatFromElement) - a residue PlayerFactory
-  // writes but destroy() never cleared, so it kept reporting the old format
-  // forever. The core's own `format` (reset to null by destroy()) is the
-  // real source of truth now; nativeEl.dataset.type is no longer consulted.
+  // used to write but destroy() never cleared, so it kept reporting the old
+  // format forever. The core's own `format` (reset to null by destroy()) is
+  // the real source of truth; PlayerFactory.create() doesn't write
+  // data-type on the element at all any more (cycle 3, defect 1).
   it('getCurrentFormat reflects the core\'s active format, and destroy() resets it to undefined', () => {
-    (PlayerFactory.create as jest.Mock).mockImplementation((({ element }: any) => {
-      element.dataset.type = 'hls.js';
+    (PlayerFactory.create as jest.Mock).mockImplementation((() => {
       return { destroy: jest.fn(), onReady: Promise.resolve(), load: jest.fn() };
     }) as any);
 
