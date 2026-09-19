@@ -39,6 +39,45 @@ import "@rodrigofranca/ultra-media";
 
 ---
 
+## 📦 Entry points (`<ultra-media>` vs `<ultra-media-ad>`)
+
+O pacote publica **dois entry points independentes**. O núcleo (`<ultra-media>`)
+nunca importa código de ads, direta ou transitivamente - quem só toca vídeo
+não paga pelo peso do `ima-ad-player`.
+
+| Elemento | Entry | ESM | UMD/`<script>` |
+| --- | --- | --- | --- |
+| `<ultra-media>` | `@rodrigofranca/ultra-media` | `import "@rodrigofranca/ultra-media"` | `dist/ultra-media.umd.js` |
+| `<ultra-media-ad>` | `@rodrigofranca/ultra-media/ad` | `import "@rodrigofranca/ultra-media/ad"` | `dist/ultra-media-ad.umd.js` |
+
+```ts
+// só vídeo
+import "@rodrigofranca/ultra-media";
+
+// vídeo + ads (Google IMA via ima-ad-player)
+import "@rodrigofranca/ultra-media";
+import "@rodrigofranca/ultra-media/ad";
+```
+
+```html
+<!-- via <script>, sem bundler -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/@rodrigofranca/ultra-media/+esm"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@rodrigofranca/ultra-media/ad/+esm"></script>
+```
+
+`<ultra-media-ad>` depende do núcleo apenas pelo contrato público do elemento
+`<ultra-media>` (o `nativeEl` que ele expõe) - nunca importa internals de
+`src/core`/`src/players`, então incluir o entry de ads não faz o bundle do
+núcleo ser duplicado nem embutido.
+
+> ⚠️ **Breaking change**: antes desta versão, importar
+> `@rodrigofranca/ultra-media` registrava `<ultra-media>` **e**
+> `<ultra-media-ad>` no mesmo bundle. Quem usa `<ultra-media-ad>` agora
+> precisa do import adicional `@rodrigofranca/ultra-media/ad` (ou da tag
+> `<script>` equivalente) - ver tabela acima.
+
+---
+
 ## ✅ Suporte a formatos
 
 | Formato | Extensão/URL | Engine Utilizada |

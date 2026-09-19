@@ -13,6 +13,9 @@ This directory contains various examples demonstrating the usage of the Ultra Me
    - Integration with Google IMA ads
    - Side-by-side video and ad display
    - Ad event handling
+   - Loads two entries: the core bundle (`ultra-media.es.js`) and the
+     separate ad bundle (`ultra-media-ad.es.js`) - see "Entry points" in the
+     main README
 
 3. **HLS Player** (`hls-player.html`)
    - HLS stream playback
