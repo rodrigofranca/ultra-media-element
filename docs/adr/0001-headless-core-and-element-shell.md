@@ -1,0 +1,261 @@
+# ADR-0001: Headless `UltraMediaCore` + thin `<ultra-media>` element shell
+
+- **Status:** Accepted
+- **Date:** 2026-09-19
+- **Deciders:** Rodrigo França
+
+## Context
+
+`<ultra-media>` today is one class (`src/ultra-media-element.ts`) that extends
+Mux's `super-media-element` and mixes three concerns: being a custom element,
+orchestrating engines (format detection, player factory, lifecycle,
+cancellation, error routing), and adapting tracks to `media-tracks`.
+
+Three forces make that shape untenable:
+
+1. **Host integration.** The first production host (a large publisher player
+   with its own kernel, UI and ad stack) creates and owns the `<video>`
+   element and hands it to its engines. `<ultra-media>` creates its own
+   `<video>` inside a shadow root, so it cannot be plugged in as an engine.
+   The host's ad stack (IMA) must operate on the same real `<video>`.
+2. **Devices.** Smart TVs (older Tizen/webOS) may lack Custom Elements v1,
+   Shadow DOM, `ResizeObserver` or the `EventTarget` constructor. The playback
+   logic must run without any of them.
+3. **The inherited base is in the way.** `super-media-element` was last
+   published in June 2024; Mux continued it as `custom-media-element`
+   (same monorepo, actively released). While fixing lifecycle and error
+   handling we hit three problems caused by the base sitting in the path of
+   core logic: it reserves `load()` for its own convention, it re-dispatches
+   every native event with an empty `detail` (duplicate `error`), and its
+   `disconnectedCallback` is a no-op. A large part of our public API is
+   inherited and was never frozen.
+
+At the same time, **media-chrome compatibility is a strategic goal**
+(plug-and-play UI, community adoption, presence in the Mux ecosystem), and the
+individual players in `src/players/*` already take an `HTMLVideoElement` as a
+constructor argument — the engine layer is closer to headless than the element
+suggests.
+
+Measured weight of the core bundle (13.0 kB gzip): own code ≈ 8 kB,
+`media-tracks` ≈ 3.5 kB, `super-media-element` ≈ 1.8 kB.
+
+## Decision
+
+Split the package into two layers with a hard dependency rule between them.
+
+```
+@rodrigofranca/ultra-media/core   UltraMediaCore      pure class, zero runtime deps,
+                                                      no Custom Elements / Shadow DOM
+@rodrigofranca/ultra-media        <ultra-media>       thin shell over the core,
+                                                      media-chrome compatible
+@rodrigofranca/ultra-media/ad     <ultra-media-ad>    unchanged
+```
+
+**Rule:** `core` never imports from the shell, from `custom-media-element` or
+from `media-tracks`. A build-time check enforces it, like the existing
+"core bundle contains no ads code" guard.
+
+### D1 — `UltraMediaCore` attaches to a media element it does not own
+
+```ts
+const core = new UltraMediaCore(mediaEl, options);
+core.load('https://…/master.m3u8');
+// …
+core.destroy();            // idempotent; mediaEl is left clean and reusable
+```
+
+The core never creates, moves or removes `mediaEl`. It may set `src`,
+`crossOrigin` and attach listeners, and must undo all of it on `destroy()`.
+Everything that exists today in `ultra-media-element.ts` beyond "being an
+element" moves here: format detection, engine selection, the pending-load
+cancellation (`destroyed` + generation counter), source-swap teardown, and the
+single `fatal ? 'error' : 'warning'` routing.
+
+### D2 — Public surface of the core
+
+```ts
+interface UltraMediaOptions {
+  container?: HTMLElement;       // where engines that render outside <video> (YouTube) mount
+  request?: RequestPolicy;       // D4
+  live?: boolean | 'auto';       // D5 — default 'auto'
+  sdk?: { hls?: string; dash?: string };   // override pinned CDN URLs (self-host / other CDN)
+  preferNative?: boolean | 'auto';         // native HLS where MSE is worse (Safari, TVs)
+  retry?: RetryPolicy;           // shape reserved; implemented with `alternatives`
+}
+
+type Source = string | { src: string; type?: Format; alternatives?: string[] };
+
+class UltraMediaCore {
+  constructor(media: HTMLMediaElement, options?: UltraMediaOptions);
+  load(source: Source): void;
+  destroy(): void;
+  configure(options: Partial<UltraMediaOptions>): void;   // applies to the next load()
+
+  readonly media: HTMLMediaElement;
+  readonly src: string | null;
+  readonly format: Format | null;
+  readonly engine: string | null;          // 'hls.js' | 'dash.js' | 'native' | 'youtube' | custom
+  readonly ready: Promise<void>;           // settles per load(); rejects on fatal error / supersede
+
+  readonly renditions: readonly VideoRendition[];
+  rendition: string | 'auto';              // get/set by id
+  readonly audioTracks: readonly MediaTrack[];
+  audioTrack: string | null;
+  readonly textTracks: readonly MediaTrack[];   // manifest subtitles, in addition to <track>
+  textTrack: string | null;
+
+  readonly live: LiveInfo;                 // D5
+  goToLive(): void;
+
+  addEventListener(type, listener): void;
+  removeEventListener(type, listener): void;
+
+  static registerEngine(engine: EngineDefinition): void;   // D6
+}
+```
+
+Events (all carry a typed `detail`): `error`, `warning`, `ready`,
+`sourcechange`, `enginechange`, `renditionschange`, `renditionchange`,
+`audiotrackschange`, `audiotrackchange`, `texttrackschange`, `texttrackchange`,
+`livechange`, `streamended`. Standard media events (`playing`, `timeupdate`…)
+are **not** re-emitted: consumers listen on `core.media`, which is the real
+element. `error`/`warning` keep today's `MediaPlayerError` shape.
+
+The core exposes an `addEventListener`-compatible surface backed by a ~30-line
+internal emitter rather than `extends EventTarget`, because the `EventTarget`
+constructor is missing on the oldest TV runtimes.
+
+Selection by **id** everywhere (not index, not height, not language). Hosts
+that think in heights or language codes map them in their adapter.
+
+### D3 — The `<ultra-media>` shell is built on Mux's `custom-media-element`
+
+The shell owns a `<video>` in its shadow root, instantiates one
+`UltraMediaCore` on it, reflects attributes to options, and mirrors core state
+to the APIs media-chrome reads (`videoRenditions` / `audioTracks` via
+`media-tracks`, `error`/`warning` re-dispatched as `CustomEvent`).
+
+We **migrate from the frozen `super-media-element` to its maintained
+successor `custom-media-element`** instead of writing our own base. With the
+core extracted, the base is no longer in the path of playback logic, so its
+conventions stop hurting:
+
+- its `load()` hook (called by the base on every `src` change) becomes exactly
+  what we need — the shell's `load()` delegates to `core.load()`;
+- native-event forwarding is fine for media events; we keep `error` excluded
+  and re-dispatch ours;
+- connect/disconnect handling stays in the shell (deferred teardown already
+  implemented), calling `core.destroy()` / `core.load()`.
+
+This keeps media-chrome compatibility and the Mux-ecosystem story, confines
+both Mux dependencies (~5 kB gzip) to the shell, and leaves the core — what
+the production host and TVs consume — dependency-free (≈ 8 kB gzip today).
+
+A Playwright e2e using `examples/media-chrome-player.html` becomes a gate:
+play/pause, seek, rendition menu and mute through `<media-controller>`.
+
+### D4 — Request policy (auth, signed URLs)
+
+```ts
+interface RequestContext { url: string; type: 'manifest' | 'segment' | 'key' | 'license' | 'other' }
+interface RequestPolicy {
+  headers?: Record<string, string> | ((ctx: RequestContext) => Record<string, string> | void);
+  credentials?: 'omit' | 'same-origin' | 'include';
+  transformUrl?: (ctx: RequestContext) => string | void;     // signed URLs, CDN switching
+}
+```
+
+Applied by each engine through its SDK's supported hook (hls.js
+`xhrSetup`/`fetchSetup`, dash.js request interceptors). For native playback
+the browser issues the requests, so only `credentials` (via `crossOrigin`) and
+`transformUrl` on the top-level URL can apply; **custom headers on native
+playback are impossible** and the core emits a `warning`
+(`code: 'REQUEST_HEADERS_UNSUPPORTED'`) instead of silently dropping them.
+
+This covers the host's "Bearer token, else cookies" rule and the backlog items
+"URL signing" and "XHR overwrite".
+
+### D5 — Live
+
+`options.live`: `'auto'` reads it from the manifest; `true` forces live
+handling (start at the edge). `core.live` =
+`{ isLive, seekableStart, seekableEnd, liveEdge, latency?, playheadDate? }`,
+updated with `livechange`. `goToLive()` seeks to the engine's live sync
+position. A live stream that ends emits `streamended` (live → VOD transition,
+terminal 404 on the manifest, or final stall), which is distinct from `ended`.
+
+### D6 — Engine contract and registration
+
+`IMediaPlayer` evolves into an internal `MediaEngine` contract: constructor
+receives `(media, context)` where `context` carries `request`, `live`,
+`container`, `sdk` URLs and an abort signal equivalent; it adds
+`getLiveInfo()`, `goToLive()`, `setTextTrack()` and standardises the
+cancellation semantics that hls/dash/youtube implement separately today.
+
+```ts
+UltraMediaCore.registerEngine({
+  name: 'shaka',
+  canPlay: (source, env) => 0 | 1 | 2,   // 0 = no; higher wins over built-ins
+  create: (media, context) => MediaEngine,
+});
+```
+
+Built-ins register themselves through the same API (backlog item "library
+extension"). SDK loading stays lazy and pinned (`sdk-config.ts`).
+
+### D7 — What is explicitly *not* in the core
+
+- The host's `on/off/fire` emitter, `changeBitrate(height)`,
+  `changeLanguage(code)`, `initialize(token)`: these are host dialect and live
+  in the host's adapter, which wraps `UltraMediaCore`.
+- Ads. The host keeps its own ad stack on the shared `<video>`;
+  `<ultra-media-ad>` remains a separate entry. A generic ad-plugin contract is
+  a later ADR.
+- Analytics adapters. The core will expose QoE signals (separate ADR); vendors
+  (Permutive, GA, Comscore…) are adapters outside the package.
+- DRM (P2 — first production target does not use it). `RequestContext.type`
+  already reserves `key`/`license`.
+
+## Consequences
+
+**Positive:** pluggable as an engine in a host-owned `<video>`; runs without
+Custom Elements; public API is ours and frozen by types + tests; Mux
+dependencies isolated and on a maintained package; core ≈ 8 kB gzip.
+
+**Negative / risks:** the refactor touches every file in `src/`; the element's
+inherited API must be inventoried and frozen with tests *before* moving code;
+two layers mean state mirrored in two places (tracks), a classic source of
+drift — the shell must derive from core events only, never from the SDKs.
+
+**Breaking changes for current consumers:** none intended for `<ultra-media>`
+attributes, properties and events. New: `/core` entry. Anything that reached
+into `element.player` or other internals breaks (never public).
+
+## Delivery plan
+
+Each step is its own PR with the existing gates (typecheck, 79 unit, 36 e2e,
+size) plus a blind review, max three fix cycles.
+
+1. **Freeze the contract.** Inventory the element's effective public API
+   (own + inherited) and lock it with tests. No production code changes.
+2. **Extract `UltraMediaCore`** with zero behaviour change; the element
+   delegates to it. `/core` entry + "core imports no shell/Mux code" guard +
+   an e2e that drives the core on a bare `<video>` with no custom element.
+3. **Shell on `custom-media-element`** + media-chrome e2e gate.
+4. **Request policy** (D4).
+5. **Live** (D5).
+6. **`alternatives` failover + retry policy.**
+7. Host adapter behind a feature flag (host repository, out of this package).
+
+## Open questions
+
+1. Build target for `/core`: which minimum Tizen/webOS years? Until answered,
+   the core avoids Custom Elements, Shadow DOM, `EventTarget` construction,
+   `ResizeObserver` and private class fields, and we ship ES2017 for `/core`.
+2. Native playback + Bearer token (Safari/TV native HLS): is cookie auth or a
+   tokenised URL acceptable there? Headers cannot be set.
+3. Single package with subpath exports (proposed) vs. a separate
+   `@ultra-media/core` package. Subpaths are simpler now; a scope is better
+   branding later and can be introduced without breaking imports.
+4. Should `renditions`/`audioTracks` in the core also be exposed through
+   `media-tracks`-shaped lists for hosts without the shell? Proposed: no.
