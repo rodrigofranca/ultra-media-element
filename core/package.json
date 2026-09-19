@@ -33,7 +33,7 @@
     "preview": "vite preview",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "size": "size-limit",
+    "size": "node scripts/check-bundle-isolation.mjs && size-limit",
     "analyze": "cem analyze",
     "e2e": "pnpm run build && playwright test --config=e2e/playwright.config.ts",
     "e2e:network": "pnpm run build && E2E_NETWORK=1 playwright test --config=e2e/playwright.config.ts",
@@ -41,16 +41,28 @@
   },
   "size-limit": [
     {
-      "name": "ESM bundle (gzip)",
+      "name": "core ESM bundle (gzip)",
       "path": "dist/ultra-media.es.js",
       "gzip": true,
-      "limit": "35.6 KB"
+      "limit": "14.4 KB"
     },
     {
-      "name": "UMD bundle (gzip)",
+      "name": "core UMD bundle (gzip)",
       "path": "dist/ultra-media.umd.js",
       "gzip": true,
-      "limit": "30.2 KB"
+      "limit": "11 KB"
+    },
+    {
+      "name": "ads ESM bundle (gzip)",
+      "path": "dist/ultra-media-ad.es.js",
+      "gzip": true,
+      "limit": "25.1 KB"
+    },
+    {
+      "name": "ads UMD bundle (gzip)",
+      "path": "dist/ultra-media-ad.umd.js",
+      "gzip": true,
+      "limit": "21 KB"
     }
   ],
   "keywords": [],
