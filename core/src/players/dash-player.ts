@@ -1,8 +1,74 @@
-import type { IMediaPlayer, MediaTracks, MediaPlayerError } from "../core/media-player";
+import type { IMediaPlayer, MediaTracks, MediaPlayerError, MediaErrorCategory } from "../core/media-player";
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
 import { DASHJS_SDK_URL } from "../core/sdk-config";
+
+// dash.js reports every error through one event carrying a numeric
+// `MediaPlayer.errors` code (see node_modules/dashjs/index.d.ts
+// `MediaPlayerErrors`) and never sets a `fatal` flag itself - unlike
+// hls.js, severity has to be inferred from the code. These two tables
+// encode that policy; see result.md "decisões de design" for the
+// per-code reasoning (manifest/MSE failures are fatal, a single
+// segment/init/sidx/timing resource failing is not - dash.js's own
+// retry/ABR logic can route around it, confirmed by reading
+// dist/modern/umd/dash.all.debug.js's HTTPLoader and ErrorHandler).
+function categorizeDashError(code: number | null, errors: any): MediaErrorCategory {
+  if (code == null) return 'otherError';
+
+  const mediaErrorCodes = [
+    errors.APPEND_ERROR_CODE,
+    errors.REMOVE_ERROR_CODE,
+    errors.DATA_UPDATE_FAILED_ERROR_CODE,
+    errors.CAPABILITY_MEDIASOURCE_ERROR_CODE,
+    errors.CAPABILITY_MEDIAKEYS_ERROR_CODE,
+    errors.MEDIASOURCE_TYPE_UNSUPPORTED_CODE,
+  ];
+  if (mediaErrorCodes.includes(code)) return 'mediaError';
+
+  const networkErrorCodes = [
+    errors.MANIFEST_LOADER_PARSING_FAILURE_ERROR_CODE,
+    errors.MANIFEST_LOADER_LOADING_FAILURE_ERROR_CODE,
+    errors.XLINK_LOADER_LOADING_FAILURE_ERROR_CODE,
+    errors.SEGMENT_BASE_LOADER_ERROR_CODE,
+    errors.TIME_SYNC_FAILED_ERROR_CODE,
+    errors.FRAGMENT_LOADER_LOADING_FAILURE_ERROR_CODE,
+    errors.FRAGMENT_LOADER_NULL_REQUEST_ERROR_CODE,
+    errors.URL_RESOLUTION_FAILED_GENERIC_ERROR_CODE,
+    errors.DOWNLOAD_ERROR_ID_MANIFEST_CODE,
+    errors.DOWNLOAD_ERROR_ID_SIDX_CODE,
+    errors.DOWNLOAD_ERROR_ID_CONTENT_CODE,
+    errors.DOWNLOAD_ERROR_ID_INITIALIZATION_CODE,
+    errors.DOWNLOAD_ERROR_ID_XLINK_CODE,
+    errors.MANIFEST_ERROR_ID_PARSE_CODE,
+    errors.MANIFEST_ERROR_ID_NOSTREAMS_CODE,
+    errors.MANIFEST_ERROR_ID_MULTIPLEXED_CODE,
+  ];
+  if (networkErrorCodes.includes(code)) return 'networkError';
+
+  return 'otherError';
+}
+
+// Codes for a single resource (one segment/init segment/sidx/UTC timing
+// source, or a non-fatal timed-text parse issue) that dash.js's own
+// retry/ABR machinery can route around without stopping playback.
+// Anything not in this list (manifest/MSE/capability failures, and any
+// code dash.js adds in the future) defaults to fatal.
+function isDashErrorRecoverable(code: number | null, errors: any): boolean {
+  if (code == null) return false;
+
+  return [
+    errors.SEGMENT_BASE_LOADER_ERROR_CODE,
+    errors.TIME_SYNC_FAILED_ERROR_CODE,
+    errors.FRAGMENT_LOADER_LOADING_FAILURE_ERROR_CODE,
+    errors.FRAGMENT_LOADER_NULL_REQUEST_ERROR_CODE,
+    errors.URL_RESOLUTION_FAILED_GENERIC_ERROR_CODE,
+    errors.DOWNLOAD_ERROR_ID_SIDX_CODE,
+    errors.DOWNLOAD_ERROR_ID_CONTENT_CODE,
+    errors.DOWNLOAD_ERROR_ID_INITIALIZATION_CODE,
+    errors.TIMED_TEXT_ERROR_ID_PARSE_CODE,
+  ].includes(code);
+}
 
 export class DashPlayer implements IMediaPlayer {
   private nativeEl: HTMLVideoElement;
@@ -43,13 +109,19 @@ export class DashPlayer implements IMediaPlayer {
 
     this.player.on(this.dashjs.MediaPlayer.events.ERROR, (e: any) => {
       if (this.errorCallback) {
+        const err = e.error ?? {};
+        const code: number | null = typeof err.code === 'number' ? err.code : null;
+        const data = err.data ?? {};
+        const errors = this.dashjs.MediaPlayer.errors;
         this.errorCallback({
-          type: 'networkError',
-          details: e.error?.message || 'unknown',
-          fatal: true,
-          statusCode: e.error?.data?.request?.response?.status,
-          url: e.error?.data?.request?.url,
-          message: e.error?.message,
+          fatal: !isDashErrorRecoverable(code, errors),
+          category: categorizeDashError(code, errors),
+          code: code != null ? String(code) : 'unknown',
+          message: err.message || 'unknown',
+          engine: 'dash.js',
+          url: data.response?.url ?? data.request?.url,
+          status: data.response?.status,
+          cause: err,
         });
       }
     });
