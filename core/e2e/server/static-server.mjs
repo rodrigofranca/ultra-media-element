@@ -5,9 +5,12 @@
  * (`e2e/fixtures/`) from one origin, so tests exercise the artifact that
  * actually ships - not the Vite dev server.
  *
- *   /dist/...      -> core/dist
- *   /fixtures/...  -> core/e2e/fixtures
- *   /...           -> core/e2e/pages
+ *   /dist/...         -> core/dist
+ *   /fixtures/...     -> core/e2e/fixtures
+ *   /media-chrome/... -> core/node_modules/media-chrome/dist (devDependency,
+ *                        served from disk so the media-chrome e2e gate stays
+ *                        hermetic - no CDN, see ADR-0001 D3)
+ *   /...              -> core/e2e/pages
  */
 import http from 'node:http';
 import path from 'node:path';
@@ -20,6 +23,7 @@ const CORE_ROOT = path.resolve(__dirname, '..', '..');
 const ROUTES = [
   { prefix: '/dist/', root: path.join(CORE_ROOT, 'dist') },
   { prefix: '/fixtures/', root: path.join(CORE_ROOT, 'e2e', 'fixtures') },
+  { prefix: '/media-chrome/', root: path.join(CORE_ROOT, 'node_modules', 'media-chrome', 'dist') },
   { prefix: '/', root: path.join(CORE_ROOT, 'e2e', 'pages') },
 ];
 
