@@ -1,4 +1,5 @@
 import type { MediaPlayerError } from './core/media-player';
+import type { RequestPolicy } from './core/request-policy';
 import { CustomVideoElement, Events as CustomMediaEvents } from 'custom-media-element';
 import { MediaTracksMixin } from 'media-tracks';
 import { UltraMediaCore, type UltraMediaCoreEvent } from './core/ultra-media-core';
@@ -70,6 +71,19 @@ export class UltraMediaElement extends MediaTracksMixin(CustomVideoElement) {
   // every engine.
   static Events = CustomMediaEvents.filter((type) => type !== 'error');
   public isLive = false;
+  private _request?: RequestPolicy;
+
+  // No HTML attribute for this (ADR-0001 D4) - headers carrying tokens
+  // don't belong in markup. configure() only affects the next core.load(),
+  // same semantics as the core's own options.request.
+  get request(): RequestPolicy | undefined {
+    return this._request;
+  }
+
+  set request(policy: RequestPolicy | undefined) {
+    this._request = policy;
+    this.core?.configure({ request: policy });
+  }
 
   constructor() {
     super();
@@ -236,7 +250,7 @@ export class UltraMediaElement extends MediaTracksMixin(CustomVideoElement) {
     // (see result-cycle2.md, defect 2). Falls back to `this` only for a
     // shadow-DOM-less test double - by the time nativeEl exists,
     // custom-media-element has always already attached a real shadow root.
-    const core = new UltraMediaCore(this.nativeEl, { container: this.shadowRoot ?? this });
+    const core = new UltraMediaCore(this.nativeEl, { container: this.shadowRoot ?? this, request: this._request });
 
     core.addEventListener<MediaPlayerError>('error', (event) => this.forwardCoreEvent('error', event));
     core.addEventListener<MediaPlayerError>('warning', (event) => this.forwardCoreEvent('warning', event));
