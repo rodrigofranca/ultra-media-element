@@ -43,6 +43,19 @@ export class UltraMediaElement extends MediaTracksMixin(CustomVideoElement) {
   // real, consulted member of the contract, just enforced here now instead
   // of by the base.
   static skipAttributes = ['src'];
+  // The base serializes every host attribute into its shadow template on
+  // init(), `src` included - a src present in the markup before the upgrade
+  // (or set on a disconnected element) would land on the inner <video> as a
+  // raw manifest/YouTube URL and the browser would start loading it
+  // natively, in parallel with the engine. Keep `skipAttributes` out of the
+  // template too: the engine is the only writer of nativeEl.src.
+  static getTemplateHTML(attrs: Record<string, string>): string {
+    const filtered: Record<string, string> = {};
+    for (const key in attrs) {
+      if (!UltraMediaElement.skipAttributes.includes(key)) filtered[key] = attrs[key];
+    }
+    return super.getTemplateHTML(filtered);
+  }
   // custom-media-element forwards every native HTMLMediaElement event it
   // sees on `nativeEl` (its shadow-root-level capturing listener runs
   // before any listener a player attaches directly on `nativeEl`, so it
