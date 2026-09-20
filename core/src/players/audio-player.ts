@@ -1,19 +1,23 @@
 import type { IMediaPlayer, MediaPlayerError } from "../core/media-player";
+import type { RequestPolicy } from "../core/request-policy";
+import { applyNativeLoad } from "../core/apply-request-policy";
 import { mapNativeMediaError } from "./native-media-error";
 
 export class AudioPlayer implements IMediaPlayer {
   public onReady: Promise<void>;
   private errorHandler?: (e: Event) => void;
+  private errorCallback?: (error: MediaPlayerError) => void;
 
   constructor(private element: HTMLVideoElement) {
     this.onReady = Promise.resolve();
   }
 
-  load(src: string): void {
-    this.element.src = src;
+  load(src: string, requestPolicy?: RequestPolicy): void {
+    this.element.src = applyNativeLoad(this.element, src, 'other', 'audio/mp3', requestPolicy, (e) => this.errorCallback?.(e));
   }
 
   onError(callback: (error: MediaPlayerError) => void) {
+    this.errorCallback = callback;
     // Called once per load() by UltraMediaCore, which reuses this player
     // across same-format loads: replace the listener, never stack them.
     if (this.errorHandler) {

@@ -250,3 +250,36 @@ describe('YouTubePlayer cancels stale sources while the IFrame API is still load
     });
   });
 });
+
+// ADR-0001 D4 - nothing in the iframe embed can apply a request policy;
+// `headers` gets a warning instead of being silently dropped, `credentials`/
+// `transformUrl` are ignored (documented in README.md).
+describe('YouTubePlayer request policy (ADR-0001 D4)', () => {
+  it('reports REQUEST_HEADERS_UNSUPPORTED once when headers are configured, deferred to a microtask', async () => {
+    const element = createVideoElement();
+    const container = document.createElement('div');
+    const player = new YouTubePlayer(element, container);
+    const onError = jest.fn();
+    player.onError(onError);
+
+    player.load('https://www.youtube.com/watch?v=VIDEO_ID123', { headers: { Authorization: 'Bearer t' } });
+    expect(onError).not.toHaveBeenCalled();
+
+    await Promise.resolve();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ fatal: false, code: 'REQUEST_HEADERS_UNSUPPORTED', engine: 'youtube' }));
+  });
+
+  it('does not warn when only credentials/transformUrl are set (both ignored for youtube)', async () => {
+    const element = createVideoElement();
+    const container = document.createElement('div');
+    const player = new YouTubePlayer(element, container);
+    const onError = jest.fn();
+    player.onError(onError);
+
+    player.load('https://www.youtube.com/watch?v=VIDEO_ID123', { credentials: 'include', transformUrl: (ctx) => ctx.url + '?x=1' });
+    await Promise.resolve();
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+});
