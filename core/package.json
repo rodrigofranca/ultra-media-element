@@ -102,6 +102,7 @@
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "jsdom": "^26.1.0",
+    "media-chrome": "4.19.2",
     "size-limit": "^14.0.0",
     "source-map-explorer": "^2.5.3",
     "ts-jest": "^29.3.4",
@@ -112,8 +113,8 @@
     "wet-run": "^1.2.5"
   },
   "dependencies": {
+    "custom-media-element": "^1.4.6",
     "ima-ad-player": "^0.5.7",
-    "media-tracks": "^0.3.4",
-    "super-media-element": "^1.4.2"
+    "media-tracks": "^0.3.4"
   }
 }
