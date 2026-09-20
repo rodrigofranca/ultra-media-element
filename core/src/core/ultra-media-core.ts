@@ -1,4 +1,4 @@
-import type { IMediaPlayer, MediaTracks, MediaPlayerError, VideoRendition, MediaTrack } from './media-player';
+import type { IMediaPlayer, MediaTracks, MediaPlayerError, VideoRendition, MediaTrack, LiveInfo } from './media-player';
 import type { RequestPolicy } from './request-policy';
 import { PlayerFactory } from './player-factory';
 import { Format } from './format';
@@ -47,6 +47,16 @@ export interface UltraMediaCoreOptions {
    * was active when that load() ran.
    */
   request?: RequestPolicy;
+  /**
+   * ADR-0001 D5 - default 'auto': isLive comes from the manifest. `true`
+   * forces live handling (start-at-edge is the engine SDK's own default
+   * behavior for a live manifest, already unconditional - see
+   * result.md "por que goToLive()/borda inicial não têm código próprio");
+   * `false` forces VOD treatment regardless of what the manifest/engine
+   * reports. Read once at player construction, like `container` - a later
+   * configure({ live }) only applies starting with the next load().
+   */
+  live?: boolean | 'auto';
 }
 
 export type UltraMediaCoreEventType =
@@ -58,7 +68,9 @@ export type UltraMediaCoreEventType =
   | 'renditionschange'
   | 'renditionchange'
   | 'audiotrackschange'
-  | 'audiotrackchange';
+  | 'audiotrackchange'
+  | 'livechange'
+  | 'streamended';
 
 export interface UltraMediaCoreEvent<T = unknown> {
   type: UltraMediaCoreEventType;
@@ -96,6 +108,13 @@ class Emitter {
   }
 }
 
+// ADR-0001 D5 - flat 30s DVR threshold: the core has no per-engine target-
+// duration to compute "> 3x target duration" from (that lives inside each
+// SDK), so a documented flat window is used uniformly instead (see
+// result.md "critério de dvr/liveEdge").
+const DVR_THRESHOLD_SECONDS = 30;
+const NEUTRAL_LIVE: LiveInfo = { isLive: false, seekableStart: 0, seekableEnd: 0, liveEdge: 0, dvr: false, playheadDate: null };
+
 export class UltraMediaCore extends Emitter {
   readonly media: HTMLMediaElement;
 
@@ -120,6 +139,7 @@ export class UltraMediaCore extends Emitter {
   private _rendition: string | 'auto' = 'auto';
   private _audioTracks: readonly MediaTrack[] = [];
   private _audioTrack: string | null = null;
+  private _live: LiveInfo = NEUTRAL_LIVE;
 
   constructor(media: HTMLMediaElement, options: UltraMediaCoreOptions = {}) {
     super();
@@ -167,6 +187,30 @@ export class UltraMediaCore extends Emitter {
     this.emit('audiotrackchange', { audioTrack: this._audioTrack });
   }
 
+  get live(): LiveInfo { return this._live; }
+  /** No-op (silently) when the current engine isn't live, or has none. */
+  goToLive(): void { this.player?.goToLive?.(); }
+
+  private buildLiveInfo(isLive: boolean, playheadDate: Date | null): LiveInfo {
+    const seekable = this.media.seekable;
+    const len = seekable.length;
+    const seekableStart = len ? seekable.start(0) : 0;
+    const seekableEnd = len ? seekable.end(len - 1) : 0;
+    return {
+      isLive,
+      seekableStart,
+      seekableEnd,
+      // liveEdge === seekableEnd: documented simplification, see
+      // result.md "critério de dvr/liveEdge" - a per-engine "true" sync
+      // position (e.g. hls.js's own safety-margin liveSyncPosition) is what
+      // goToLive() itself targets on the engines that expose one; the
+      // *reported* LiveInfo snapshot always uses the plain seekable end.
+      liveEdge: seekableEnd,
+      dvr: isLive && (seekableEnd - seekableStart) > DVR_THRESHOLD_SECONDS,
+      playheadDate,
+    };
+  }
+
   /**
    * Same branching as the pre-extraction `applySrcChange`: reuse the current
    * player via its own `load()` when the format is unchanged, otherwise
@@ -198,6 +242,7 @@ export class UltraMediaCore extends Emitter {
         container: this.options.container,
         format: newFormat ?? undefined,
         requestPolicy: this.options.request,
+        live: this.options.live,
       });
       // Learned directly from the same resolution PlayerFactory.create()
       // just used, not read back off the <video> - the core no longer
@@ -250,6 +295,19 @@ export class UltraMediaCore extends Emitter {
       this.emit('audiotrackschange', { audioTracks: this._audioTracks });
       this.emit('renditionschange', { renditions: this._renditions });
     });
+
+    player.onLiveChange?.((isLive: boolean, playheadDate: Date | null) => {
+      if (generation !== this.generation) return;
+      this._live = this.buildLiveInfo(isLive, playheadDate);
+      this.emit('livechange', this._live);
+    });
+
+    player.onStreamEnded?.(() => {
+      if (generation !== this.generation) return;
+      this._live = this.buildLiveInfo(false, this._live.playheadDate);
+      this.emit('livechange', this._live);
+      this.emit('streamended', undefined);
+    });
   }
 
   private teardownPlayer(): void {
@@ -259,6 +317,7 @@ export class UltraMediaCore extends Emitter {
     this._audioTracks = [];
     this._rendition = 'auto';
     this._audioTrack = null;
+    this._live = NEUTRAL_LIVE;
     // The core writes nothing on the host's element besides `src`. A player
     // that does (YouTubePlayer hides the native <video>) undoes its own
     // write in its destroy(), which the line above already ran.

@@ -27,24 +27,39 @@ type FakePlayer = IMediaPlayer & {
   destroy: jest.Mock;
   switchAudioTrack: jest.Mock;
   switchRendition: jest.Mock;
+  goToLive: jest.Mock;
   emitError: (e: MediaPlayerError) => void;
   emitTracks: (t: MediaTracks) => void;
+  emitLive: (isLive: boolean, playheadDate?: Date | null) => void;
+  emitStreamEnded: () => void;
 };
 
 function fakePlayer(onReady: Promise<void> = Promise.resolve()): FakePlayer {
   let errorCb: ((e: MediaPlayerError) => void) | undefined;
   let tracksCb: ((t: MediaTracks) => void) | undefined;
+  let liveCb: ((isLive: boolean, playheadDate: Date | null) => void) | undefined;
+  let endedCb: (() => void) | undefined;
   return {
     onReady,
     load: jest.fn(),
     destroy: jest.fn(),
     switchAudioTrack: jest.fn(),
     switchRendition: jest.fn(),
+    goToLive: jest.fn(),
     onError: (cb) => { errorCb = cb; },
     onTracksChange: (cb) => { tracksCb = cb; },
+    onLiveChange: (cb) => { liveCb = cb; },
+    onStreamEnded: (cb) => { endedCb = cb; },
     emitError: (e) => errorCb?.(e),
     emitTracks: (t) => tracksCb?.(t),
+    emitLive: (isLive, playheadDate = null) => liveCb?.(isLive, playheadDate),
+    emitStreamEnded: () => endedCb?.(),
   };
+}
+
+function withSeekable(el: HTMLVideoElement, start: number, end: number, currentTime = end) {
+  Object.defineProperty(el, 'seekable', { configurable: true, value: { length: 1, start: () => start, end: () => end } });
+  Object.defineProperty(el, 'currentTime', { configurable: true, value: currentTime, writable: true });
 }
 
 function mockFactoryReturning(...players: FakePlayer[]) {
@@ -617,5 +632,125 @@ describe('UltraMediaCore: configure() (ADR-0001 D4)', () => {
     core.load('b.m3u8');
 
     expect(PlayerFactory.create).toHaveBeenLastCalledWith(expect.objectContaining({ requestPolicy: policy }));
+  });
+});
+
+describe('UltraMediaCore: live (ADR-0001 D5)', () => {
+  it('defaults to a neutral snapshot before any load()', () => {
+    const core = new UltraMediaCore(video());
+    expect(core.live).toEqual({ isLive: false, seekableStart: 0, seekableEnd: 0, liveEdge: 0, dvr: false, playheadDate: null });
+  });
+
+  it('options.live is passed to PlayerFactory.create() as-is (\'auto\' default)', () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(video(), { live: true });
+
+    core.load('live.m3u8');
+
+    expect(PlayerFactory.create).toHaveBeenCalledWith(expect.objectContaining({ live: true }));
+  });
+
+  it('onLiveChange builds LiveInfo from media.seekable/currentTime, and emits livechange', () => {
+    const el = video();
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(el);
+    const handler = jest.fn();
+    core.addEventListener('livechange', handler);
+
+    core.load('live.m3u8');
+    withSeekable(el, 0, 20, 18);
+    player.emitLive(true, new Date('2026-01-01T00:00:00Z'));
+
+    expect(core.live).toEqual({
+      isLive: true, seekableStart: 0, seekableEnd: 20, liveEdge: 20,
+      dvr: false, // 20s window, under the 30s threshold
+      playheadDate: new Date('2026-01-01T00:00:00Z'),
+    });
+    expect(handler).toHaveBeenCalledWith({ type: 'livechange', detail: core.live });
+  });
+
+  it('dvr is true once the seekable window exceeds the 30s threshold', () => {
+    const el = video();
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(el);
+
+    core.load('live.m3u8');
+    withSeekable(el, 0, 45);
+    player.emitLive(true, null);
+
+    expect(core.live.dvr).toBe(true);
+  });
+
+  it('onStreamEnded flips isLive to false, emits livechange then streamended, in that order', () => {
+    const el = video();
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(el);
+    const order: string[] = [];
+    core.addEventListener('livechange', () => order.push('livechange'));
+    core.addEventListener('streamended', () => order.push('streamended'));
+
+    core.load('live.m3u8');
+    withSeekable(el, 0, 20);
+    player.emitLive(true, null);
+    player.emitStreamEnded();
+
+    expect(core.live.isLive).toBe(false);
+    expect(order).toEqual(['livechange', 'livechange', 'streamended']);
+  });
+
+  it('goToLive() delegates to the active player, no-ops with no active player', () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(video());
+
+    expect(() => core.goToLive()).not.toThrow();
+
+    core.load('live.m3u8');
+    core.goToLive();
+    expect(player.goToLive).toHaveBeenCalledTimes(1);
+  });
+
+  it('live resets to neutral on teardown (format change) and on destroy()', () => {
+    const el = video();
+    const first = fakePlayer();
+    const second = fakePlayer();
+    mockFactoryReturning(first, second);
+    const core = new UltraMediaCore(el);
+
+    core.load('live.m3u8');
+    withSeekable(el, 0, 20);
+    first.emitLive(true, null);
+    expect(core.live.isLive).toBe(true);
+
+    core.load('vod.mp4'); // format change -> teardownPlayer()
+    expect(core.live.isLive).toBe(false);
+
+    second.emitLive(true, null);
+    core.destroy();
+    expect(core.live.isLive).toBe(false);
+  });
+
+  it('a livechange/streamended from a superseded generation is dropped (guarded like every other engine event)', () => {
+    const el = video();
+    const stale = fakePlayer();
+    const current = fakePlayer();
+    mockFactoryReturning(stale, current);
+    const core = new UltraMediaCore(el);
+    const handler = jest.fn();
+    core.addEventListener('livechange', handler);
+    core.addEventListener('streamended', handler);
+
+    core.load('a.m3u8');
+    core.load('b.mp3'); // format change (hls -> mp3) tears down `stale` and supersedes its generation
+    handler.mockClear();
+
+    stale.emitLive(true, null);
+    stale.emitStreamEnded();
+
+    expect(handler).not.toHaveBeenCalled();
   });
 });

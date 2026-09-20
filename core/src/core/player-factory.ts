@@ -19,6 +19,8 @@ export type PlayerFactoryProps = {
   format?: Format;
   /** ADR-0001 D4 - the request policy active for this load(). */
   requestPolicy?: RequestPolicy;
+  /** ADR-0001 D5 - read only at construction, like `container` (see UltraMediaCoreOptions.live). */
+  live?: boolean | 'auto';
 };
 
 const DEFAULT_FORMATS: AvailableFormats = {
@@ -64,16 +66,19 @@ function containerRequiredPlayer(src: string): IMediaPlayer {
   };
 }
 
-const engines = new Map<string, (el: HTMLVideoElement, container?: Node, src?: string, requestPolicy?: RequestPolicy) => IMediaPlayer>([
+type EngineFactory = (el: HTMLVideoElement, container?: Node, src?: string, requestPolicy?: RequestPolicy, live?: boolean | 'auto') => IMediaPlayer;
+
+const engines = new Map<string, EngineFactory>([
   // hls.js/dash.js need the request policy at construction time (their
   // setup() is async, and xhrSetup/fetchSetup/addRequestInterceptor are
   // wired up once, inside it) - video/mp4, audio/mp3 and youtube apply it
   // per load() instead (see their load() implementations), so it's passed
-  // there, not here.
-  ["hls.js", (el, _c, _s, requestPolicy) => new HlsPlayer(el, requestPolicy)],
-  ["video/mp4", (el) => new VideoPlayer(el)],
-  ["dash.js", (el, _c, _s, requestPolicy) => new DashPlayer(el, requestPolicy)],
-  ["audio/mp3", (el) => new AudioPlayer(el)],
+  // there, not here. `live` (ADR-0001 D5) is read once at construction by
+  // every engine that supports it - youtube doesn't (out of scope, D5).
+  ["hls.js", (el, _c, _s, requestPolicy, live) => new HlsPlayer(el, requestPolicy, live)],
+  ["video/mp4", (el, _c, _s, _r, live) => new VideoPlayer(el, live)],
+  ["dash.js", (el, _c, _s, requestPolicy, live) => new DashPlayer(el, requestPolicy, live)],
+  ["audio/mp3", (el, _c, _s, _r, live) => new AudioPlayer(el, live)],
   ["youtube", (el, container, src) => (container ? new YouTubePlayer(el, container) : containerRequiredPlayer(src!))],
 ]);
 
@@ -92,7 +97,7 @@ export function getCurrentFormatFromElement(el: HTMLMediaElement): Format | unde
 }
 
 export class PlayerFactory {
-  static create({ src, element, container, formats, format, requestPolicy }: PlayerFactoryProps): IMediaPlayer {
+  static create({ src, element, container, formats, format, requestPolicy, live }: PlayerFactoryProps): IMediaPlayer {
     const engineType = this.resolveEngine(src, formats ?? DEFAULT_FORMATS, format);
     const engine = engines.get(engineType);
 
@@ -106,7 +111,7 @@ export class PlayerFactory {
     // teardown). UltraMediaCore now learns the engine via resolveEngine()
     // below directly, not by reading it back off the DOM (see
     // result-cycle3.md, defect 1).
-    const player = engine(element as HTMLVideoElement, container, src, requestPolicy);
+    const player = engine(element as HTMLVideoElement, container, src, requestPolicy, live);
 
     // Call load() synchronously instead of chaining it onto `onReady`: every
     // player now queues the src internally and applies it once actually
