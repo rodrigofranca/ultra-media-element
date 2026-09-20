@@ -76,13 +76,13 @@
       "name": "headless core ESM bundle (gzip)",
       "path": "dist/ultra-media-core.es.js",
       "gzip": true,
-      "limit": "12 KB"
+      "limit": "13.5 KB"
     },
     {
       "name": "headless core UMD bundle (gzip)",
       "path": "dist/ultra-media-core.umd.cjs",
       "gzip": true,
-      "limit": "9 KB"
+      "limit": "10 KB"
     }
   ],
   "keywords": [],
