@@ -136,6 +136,118 @@ test.describe('request policy: credentials (ADR-0001 D4)', () => {
   });
 });
 
+// result-cycle2.md defect 1 (Bloqueante) - hls.js's XhrLoader retries reuse
+// the same loader context (node_modules/hls.js/dist/hls.js's BaseLoader.retry
+// ~38859-38873), which used to feed the already-transformed URL back into
+// transformUrl() on the next attempt (`?sig=1` -> `?sig=1&sig=1`). Fails one
+// specific segment once (500), lets it succeed on retry, and asserts every
+// request - including the retried one - carries exactly one `sig=1`.
+test.describe('request policy: transformUrl survives a retry (defect 1)', () => {
+  // hls.js only keeps the low-level XhrLoader retry (BaseLoader.retry(),
+  // ~38859 - the one that reuses `context` and used to double-sign it) for
+  // the top-level MASTER MANIFEST (manifestLoadPolicy.default.errorRetry).
+  // PlaylistLoader.load() (~40898-40902) explicitly nulls out
+  // errorRetry/timeoutRetry for level/audio/subtitle playlists, and
+  // fragment loads use getLoaderConfigWithoutReties() (~1907, `fragLoadPolicy`
+  // usage ~8113/8242) the same way - both instead retry by creating a whole
+  // new loader+context, which the fix doesn't need to guard (confirmed by
+  // instrumenting xhrSetup directly: a level-playlist or segment retry's
+  // `context.url` always arrives unmutated; only the master manifest's
+  // retry arrives already carrying `?sig=1`). So this fails the *manifest*,
+  // not a segment, to actually exercise the vulnerable path.
+  test('hls: the master manifest retried after a 500 still carries exactly one sig=1', async ({ page }) => {
+    const requests = captureRequests(page, /\/fixtures\/hls\//);
+    await gotoPlayer(page);
+    await instrument(page);
+    await page.evaluate(() => {
+      (document.querySelector('#player') as any).request = {
+        transformUrl: (ctx: { url: string }) => ctx.url + (ctx.url.includes('?') ? '&' : '?') + 'sig=1',
+      };
+    });
+
+    let failedOnce = false;
+    await page.route('**/fixtures/hls/master.m3u8*', async (route) => {
+      if (!failedOnce) {
+        failedOnce = true;
+        await route.fulfill({ status: 500, contentType: 'text/plain', body: 'Internal Server Error' });
+        return;
+      }
+      await route.continue();
+    });
+
+    await setSrc(page, HLS_FIXTURE);
+    await expect.poll(async () => (await getLog(page)).some((e) => e.name === 'loadedmetadata'), { timeout: 10_000 }).toBe(true);
+    await callMethod(page, 'play');
+    await expect.poll(async () => (await getProp(page, 'currentTime')) as number, { timeout: 15_000 }).toBeGreaterThan(1);
+
+    expect(requests.length).toBeGreaterThan(0);
+    const counts = requests.map((r) => new URL(r.url()).searchParams.getAll('sig').length);
+    expect(counts.every((n) => n === 1)).toBe(true);
+  });
+
+  test('dash: a media segment retried after a 500 still carries exactly one sig=1', async ({ page }) => {
+    const requests = captureRequests(page, /\/fixtures\/dash\//);
+    await gotoPlayer(page);
+    await instrument(page);
+    await page.evaluate(() => {
+      (document.querySelector('#player') as any).request = {
+        transformUrl: (ctx: { url: string }) => ctx.url + (ctx.url.includes('?') ? '&' : '?') + 'sig=1',
+      };
+    });
+
+    // The default video Representation (0 or 1 - whichever dash.js's ABR
+    // picks first in this hermetic, single-machine environment) is the one
+    // that actually gets requested; routing both covers either outcome.
+    const failedOnce = { 0: false, 1: false };
+    for (const rep of [0, 1] as const) {
+      await page.route(`**/fixtures/dash/chunk-${rep}-00002.m4s*`, async (route) => {
+        if (!failedOnce[rep]) {
+          failedOnce[rep] = true;
+          await route.fulfill({ status: 500, contentType: 'text/plain', body: 'Internal Server Error' });
+          return;
+        }
+        await route.continue();
+      });
+    }
+
+    await setSrc(page, DASH_FIXTURE);
+    await expect.poll(async () => (await getLog(page)).some((e) => e.name === 'loadedmetadata'), { timeout: 10_000 }).toBe(true);
+    await callMethod(page, 'play');
+    // chunk-*-00002.m4s covers roughly t=[1,2) - playing past 2.5 proves the
+    // retry succeeded and playback moved past the segment that failed once.
+    await expect.poll(async () => (await getProp(page, 'currentTime')) as number, { timeout: 15_000 }).toBeGreaterThan(2.5);
+
+    expect(requests.length).toBeGreaterThan(0);
+    const counts = requests.map((r) => new URL(r.url()).searchParams.getAll('sig').length);
+    expect(counts.every((n) => n === 1)).toBe(true);
+  });
+});
+
+// result-cycle2.md defect 2 (Importante) - crossOrigin is a real attribute on
+// the host's <video>; apply-request-policy.ts wrote it but nothing undid it
+// on teardown, so the host's element came back from a `credentials`-
+// configured load permanently changed.
+test.describe('request policy: crossOrigin is restored on destroy() (defect 2)', () => {
+  test('mp4 (native): destroy() restores crossOrigin, including when the attribute never existed', async ({ page }) => {
+    await gotoPlayer(page);
+    await instrument(page);
+    const hadAttributeBefore = await page.evaluate(() => (document.querySelector('#player') as any).nativeEl.hasAttribute('crossorigin'));
+    expect(hadAttributeBefore).toBe(false);
+
+    await setRequestPolicy(page, { credentials: 'include' });
+    await setSrc(page, MP4_FIXTURE);
+    await expect.poll(async () => (await getLog(page)).some((e) => e.name === 'loadedmetadata')).toBe(true);
+
+    const crossOriginWhileLoaded = await page.evaluate(() => (document.querySelector('#player') as any).nativeEl.crossOrigin);
+    expect(crossOriginWhileLoaded).toBe('use-credentials');
+
+    await callMethod(page, 'destroy');
+
+    const hadAttributeAfter = await page.evaluate(() => (document.querySelector('#player') as any).nativeEl.hasAttribute('crossorigin'));
+    expect(hadAttributeAfter).toBe(false);
+  });
+});
+
 test.describe('request policy: configure() only affects the next load() (ADR-0001 D4)', () => {
   test('switching the header via the request property between two loads changes the second, not the first', async ({ page }) => {
     const requests = captureRequests(page, /\/fixtures\/hls\//);
