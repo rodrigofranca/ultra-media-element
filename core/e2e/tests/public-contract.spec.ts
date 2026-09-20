@@ -1,12 +1,13 @@
 import { test, expect } from '../utils/hermetic';
 import { gotoPlayer, setSrc, instrument, getLog, callMethod, getProp } from '../utils/media';
 
-// Freezes the part of <ultra-media>'s effective public API (ADR-0001, Fase 1)
-// that jsdom can't reliably exercise: what super-media-element's real
-// nativeElProps passthrough actually installs from the real HTMLVideoElement
-// prototype, and attribute<->property reflection, both of which depend on
-// the real `super-media-element` package (ESM-only, not part of Jest's
-// transform pipeline - see docs/public-api.md "Método de inventário").
+// Freezes the part of <ultra-media>'s effective public API (ADR-0001, Fase 1
+// e Fase 2/D3 - migração para custom-media-element) that jsdom can't
+// reliably exercise: what custom-media-element's real nativeElProps
+// passthrough actually installs from the real HTMLVideoElement prototype,
+// and attribute<->property reflection, both of which depend on the real
+// `custom-media-element` package (ESM-only, not part of Jest's transform
+// pipeline - see docs/public-api.md "Método de inventário").
 // Runs against the published dist/ultra-media.es.js, like every other
 // hermetic e2e spec, via the shared player.html harness.
 const MP4_FIXTURE = '/fixtures/mp4/sample.mp4';
@@ -26,9 +27,9 @@ const REAL_OBSERVED_ATTRIBUTES = [
   'playsinline', 'poster', 'preload', 'src', 'live',
 ];
 
-// The 65 HTMLVideoElement/HTMLMediaElement members super-media-element's
+// The 65 HTMLVideoElement/HTMLMediaElement members custom-media-element's
 // nativeElProps loop installs, beyond the 6 it defines itself
-// (nativeEl/src/preload/defaultMuted/loadComplete/isLoaded) and the 8 from
+// (nativeEl/src/preload/defaultMuted/init/handleEvent) and the 8 from
 // media-tracks - see docs/public-api.md for the full breakdown.
 const NATIVE_PASSTHROUGH_MEMBERS = [
   'width', 'height', 'videoWidth', 'videoHeight', 'poster', 'webkitDecodedFrameCount',
@@ -64,12 +65,30 @@ test.describe('public contract: statics', () => {
     const skip = await page.evaluate(() => (customElements.get('ultra-media') as any).skipAttributes);
     expect(skip).toEqual(['src']);
   });
+
+  // New statics brought by custom-media-element (ADR-0001 D3 migration) -
+  // not part of the original 93-member inventory (super-media-element had
+  // no per-subclass-overridable template mechanism), documented here and in
+  // docs/public-api.md per the brief's "new members get a test" rule. Not
+  // covered by the prototype-member-kind walk below (that only enumerates
+  // instance/prototype members, not statics).
+  test('getTemplateHTML/shadowRootOptions exist (new statics from custom-media-element)', async ({ page }) => {
+    await gotoPlayer(page);
+    const info = await page.evaluate(() => {
+      const Ctor = customElements.get('ultra-media') as any;
+      return {
+        getTemplateHTMLType: typeof Ctor.getTemplateHTML,
+        shadowRootOptions: Ctor.shadowRootOptions,
+      };
+    });
+    expect(info).toEqual({ getTemplateHTMLType: 'function', shadowRootOptions: { mode: 'open' } });
+  });
 });
 
 // Descriptor kind for every one of the 65 native-passthrough members above,
 // in the same order - `method` (a function value), `getter` (read-only
 // accessor, e.g. the NETWORK_*/HAVE_* constants), or `accessor` (get+set,
-// installed even for some native-readonly props - super-media-element's
+// installed even for some native-readonly props - custom-media-element's
 // nativeElProps loop is generic about it). Captured by introspecting the
 // real registered class against the built dist/ultra-media.es.js in a real
 // Chromium (same method docs/public-api.md describes) - see the "member
@@ -96,8 +115,11 @@ const EXPECTED_MEMBER_KINDS: Record<string, string> = {
   setupTrackListeners: 'method', connectedCallback: 'method', disconnectedCallback: 'method', destroy: 'method',
   attributeChangedCallback: 'method', applySrcChange: 'method', createCore: 'method', forwardCoreEvent: 'method',
   syncMediaTracks: 'method', removeAllMediaTracks: 'method', changeSource: 'method', getCurrentFormat: 'method',
-  // super-media-element's own surface
-  loadComplete: 'accessor', isLoaded: 'getter', nativeEl: 'accessor', defaultMuted: 'accessor', src: 'accessor', preload: 'accessor',
+  // custom-media-element's own surface (loadComplete/isLoaded were
+  // super-media-element's - custom-media-element drops that convention
+  // entirely and replaces them with init/handleEvent, see "Diferenças da
+  // base" in result.md and the public-contract.test.ts unit-level rule)
+  init: 'method', handleEvent: 'method', nativeEl: 'accessor', defaultMuted: 'accessor', src: 'accessor', preload: 'accessor',
   // media-tracks
   videoTracks: 'getter', audioTracks: 'getter', addVideoTrack: 'method', removeVideoTrack: 'method',
   addAudioTrack: 'method', removeAudioTrack: 'method', videoRenditions: 'getter', audioRenditions: 'getter',
@@ -153,8 +175,9 @@ test.describe('public contract: full prototype member inventory', () => {
   // Proves the descriptor-kind check actually does something the old
   // name-only version couldn't: an inherited member kept its name but had
   // its *kind* silently changed (accessor -> plain method) - a shape
-  // e.g. a future super-media-element/custom-media-element swap could
-  // introduce without renaming anything. Reverted within the same test, so
+  // e.g. the super-media-element -> custom-media-element swap (ADR-0001
+  // D3) could have introduced without renaming anything. Reverted within
+  // the same test, so
   // it never leaks into any other test's page state.
   test('a member with a tampered descriptor (same name, wrong kind) is caught', async ({ page }) => {
     await gotoPlayer(page);
@@ -163,7 +186,7 @@ test.describe('public contract: full prototype member inventory', () => {
     expect(before.volume).toBe('accessor'); // sanity check on the real, untampered shape
 
     // `volume` is inherited (defined on an ancestor's prototype, e.g.
-    // super-media-element's SuperMedia base), not an own property of
+    // custom-media-element's CustomMedia base), not an own property of
     // Ctor.prototype - collectMemberKindsInPage() walks from Ctor.prototype
     // upward and keeps the first occurrence of each name, so a same-named
     // *own* property added directly on Ctor.prototype shadows the real one
@@ -212,7 +235,7 @@ test.describe('public contract: attribute <-> property reflection', () => {
   // A fresh, attribute-less element - #player in player.html is preset with
   // `muted playsinline` (see e2e/pages/player.html), which would pollute the
   // "before" baseline here. Property names are the real camelCase
-  // HTMLVideoElement ones (that's what super-media-element's nativeElProps
+  // HTMLVideoElement ones (that's what custom-media-element's nativeElProps
   // loop actually keys off - not a lowercased attribute name).
   test('boolean attributes reflect through the generic getter/setter', async ({ page }) => {
     await gotoPlayer(page);
@@ -240,9 +263,9 @@ test.describe('public contract: attribute <-> property reflection', () => {
   });
 
   // Descoberta: `autopictureinpicture` is in `observedAttributes` (it comes
-  // straight from super-media-element's static list) but this Chromium's
-  // <video> has no `autoPictureInPicture` property at all - super-media-
-  // element's nativeElProps loop only installs a getter/setter for
+  // straight from custom-media-element's static `Attributes` list) but this
+  // Chromium's <video> has no `autoPictureInPicture` property at all -
+  // custom-media-element's nativeElProps loop only installs a getter/setter for
   // properties that actually exist on a real <video>, so this attribute
   // reflects into nothing today. Not a bug to fix here (see AGENTS.md golden
   // rule 4) - just something Fase 2 must not "helpfully" wire up.
@@ -287,8 +310,8 @@ test.describe('public contract: attribute <-> property reflection', () => {
   });
 
   // Descoberta (docs/public-api.md): unlike the other booleans above, `muted`
-  // is deliberately excluded from super-media-element's generic attr<->prop
-  // set. The property always proxies straight to nativeEl.muted; the
+  // is deliberately excluded from custom-media-element's generic attr<->prop
+  // set (both bases delete 'muted' from the same propsToAttrs set). The property always proxies straight to nativeEl.muted; the
   // attribute only seeds nativeEl's *initial* muted state at connect time
   // (same as native <video muted>), so setting it afterwards is a no-op on
   // the live property.
