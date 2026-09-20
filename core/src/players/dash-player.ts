@@ -159,8 +159,8 @@ export class DashPlayer implements IMediaPlayer {
     // values RequestPolicy uses.
     this.requestInterceptor = (request: any) => {
       const ctx: RequestContext = { url: request.url, type: classifyDashRequestType(request.customData?.request?.type), engine: 'dash.js' };
-      applyRequestPolicy(this.requestPolicy, ctx, request, (err) => this.errorCallback?.(err));
-      if (this.requestPolicy?.credentials) request.credentials = this.requestPolicy.credentials;
+      const ok = applyRequestPolicy(this.requestPolicy, ctx, request, (err) => this.errorCallback?.(err));
+      if (ok && this.requestPolicy?.credentials) request.credentials = this.requestPolicy.credentials; // defect 4
       return Promise.resolve(request);
     };
     this.player.addRequestInterceptor(this.requestInterceptor);

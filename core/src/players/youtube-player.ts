@@ -1,6 +1,6 @@
 import type { IMediaPlayer, MediaErrorCategory, MediaPlayerError } from "../core/media-player";
 import type { RequestPolicy } from "../core/request-policy";
-import { reportHeadersUnsupported } from "../core/apply-request-policy";
+import { reportHeadersUnsupported, deferredGuardedReport } from "../core/apply-request-policy";
 import { YOUTUBE_IFRAME_API_URL } from "../core/sdk-config";
 
 // https://developers.google.com/youtube/iframe_api_reference#onError - every
@@ -334,7 +334,12 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     const generation = ++this.loadGeneration;
     this.currentSrc = src;
     if (requestPolicy?.headers) {
-      reportHeadersUnsupported({ url: src, type: 'other', engine: 'youtube' }, (e) => this.errorCallback?.(e));
+      // Gated by this same loadGeneration (defect 3): a superseded load()
+      // must not warn once its microtask fires.
+      reportHeadersUnsupported({ url: src, type: 'other', engine: 'youtube' }, deferredGuardedReport(
+        (e) => this.errorCallback?.(e),
+        () => !this.isDestroyed && generation === this.loadGeneration,
+      ));
     }
     this.element.dispatchEvent(new Event('emptied'));
     this.element.dispatchEvent(new Event('loadstart'));

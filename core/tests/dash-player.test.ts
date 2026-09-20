@@ -451,6 +451,63 @@ describe('DashPlayer request policy (ADR-0001 D4)', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ fatal: false, code: 'REQUEST_POLICY_ERROR', engine: 'dash.js' }));
   });
 
+  // result-cycle2.md defect 4 - a headers() throwing *after* a successful
+  // transformUrl() used to leave the request with the transformed URL but
+  // no headers and still credentialed - a mixed, half-applied policy state.
+  it('a headers() that throws after a successful transformUrl() rolls the URL back too and skips credentials, not just headers', async () => {
+    const { player, interceptor } = await setupPlayerWithInterceptor({
+      transformUrl: (ctx) => ctx.url + '?sig=1',
+      headers: () => { throw new Error('token expired'); },
+      credentials: 'include',
+    });
+    const onError = jest.fn();
+    player.onError(onError);
+    const request = fakeRequest('https://example.com/manifest.mpd', 'MPD');
+
+    const result = await interceptor(request);
+
+    expect(result.url).toBe('https://example.com/manifest.mpd');
+    expect(result.headers).toBeUndefined();
+    expect(result.credentials).toBeUndefined();
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ fatal: false, code: 'REQUEST_POLICY_ERROR', engine: 'dash.js' }));
+  });
+
+  // result-cycle2.md defect 5 - dash.js's default (non-low-latency) loader
+  // is XHRLoader (dash.all.debug.js's _getLoader, ~60300-60319), which
+  // itself does `xhr.withCredentials = commonMediaRequest.credentials ===
+  // 'include'` (~60704) - the same true/false-only limitation as hls.js's
+  // xhrSetup and native crossOrigin (README.md). We just forward the value
+  // unchanged; this documents that all three values reach dash.js intact.
+  it.each(['omit', 'same-origin', 'include'] as const)('forwards credentials:"%s" onto the CommonMediaRequest unchanged', async (credentials) => {
+    const { interceptor } = await setupPlayerWithInterceptor({ credentials });
+    const request = fakeRequest('https://example.com/manifest.mpd', 'MPD');
+
+    const result = await interceptor(request);
+
+    expect(result.credentials).toBe(credentials);
+  });
+
+  // result-cycle2.md defect 6 (Registrar, não implementar) - DRM is P2, out
+  // of scope for this cycle. dash.js applies license/certificate requests
+  // through a *separate* filter list (registerLicenseRequestFilter,
+  // dash.all.debug.js ~56819; consumed by _doLicenseRequest ~62547-62567),
+  // never through addRequestInterceptor - so options.request does not reach
+  // license requests today, even though RequestContext.type/
+  // classifyDashRequestType already recognize 'license'/'licenseCertificate'
+  // (see the "classifies MPD/segment/license request types" test above -
+  // that classification only ever runs if a *real* dash.js interceptor call
+  // carried one, which never happens for license). mockPlayerInstance
+  // (setupMocks()) deliberately has no registerLicenseRequestFilter, the
+  // same way a real DashPlayer that started calling it unexpectedly would
+  // throw here instead of a passing test hiding it.
+  // TODO(drm): wire a license request hook once DRM is in scope (ADR-0001 D7).
+  it('never registers a license request filter - options.request does not reach DRM license requests (documents current behavior)', async () => {
+    const { mockPlayerInstance } = await setupPlayerWithInterceptor({ headers: { Authorization: 'Bearer t' } });
+
+    expect(mockPlayerInstance.addRequestInterceptor).toHaveBeenCalledTimes(1);
+    expect((mockPlayerInstance as any).registerLicenseRequestFilter).toBeUndefined();
+  });
+
   it('a later load() with a different request policy changes what the next request carries, without recreating the dash.js instance', async () => {
     const { player, interceptor, mockPlayerInstance } = await setupPlayerWithInterceptor({ headers: { Authorization: 'Bearer old' } });
 

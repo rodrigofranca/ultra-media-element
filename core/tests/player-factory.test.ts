@@ -149,7 +149,7 @@ describe("PlayerFactory", () => {
     await player.onReady;
 
     const context: any = { url: 'https://example.com/video.m3u8', type: 'manifest' };
-    config.xhrSetup({ setRequestHeader: jest.fn() }, context.url, context);
+    config.xhrSetup({ setRequestHeader: jest.fn(), open: jest.fn() }, context.url, context);
     expect(context.headers).toEqual({ Authorization: 'Bearer t' });
   });
 

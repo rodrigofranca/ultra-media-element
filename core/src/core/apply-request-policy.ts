@@ -1,13 +1,13 @@
 import type { MediaPlayerError } from './media-player';
 import type { RequestContext, RequestPolicy } from './request-policy';
 
-/** The subset of a hls.js/dash.js request object `applyRequestPolicy` reads/writes. */
+// The subset of a hls.js/dash.js request object `applyRequestPolicy` reads/writes.
 export interface RequestPatch {
   url: string;
   headers?: Record<string, string>;
 }
 
-type Report = (error: MediaPlayerError) => void;
+export type Report = (error: MediaPlayerError) => void;
 
 function policyError(ctx: RequestContext, cause: unknown): MediaPlayerError {
   return {
@@ -21,16 +21,11 @@ function policyError(ctx: RequestContext, cause: unknown): MediaPlayerError {
   };
 }
 
-/**
- * hls.js/dash.js path (ADR-0001 D4): both support `transformUrl` and
- * `headers` per request, so this mutates `req` (a plain `{url, headers}`
- * view onto the SDK's own request object) in place. Order matters -
- * `transformUrl` runs first, so a host `headers(ctx)` sees the final URL.
- * A throw from either host callback is caught and reported as a
- * `REQUEST_POLICY_ERROR` warning instead of failing the request outright.
- */
-export function applyRequestPolicy(policy: RequestPolicy | undefined, ctx: RequestContext, req: RequestPatch, report: Report): void {
-  if (!policy) return;
+// hls.js/dash.js path: mutates `req`. Returns false on a throw, after rolling `req`/`ctx` back (defect 4).
+export function applyRequestPolicy(policy: RequestPolicy | undefined, ctx: RequestContext, req: RequestPatch, report: Report): boolean {
+  if (!policy) return true;
+  const originalUrl = req.url;
+  const originalHeaders = req.headers;
   try {
     if (policy.transformUrl) {
       const url = policy.transformUrl(ctx);
@@ -43,20 +38,32 @@ export function applyRequestPolicy(policy: RequestPolicy | undefined, ctx: Reque
       const resolved = typeof policy.headers === 'function' ? policy.headers(ctx) : policy.headers;
       if (resolved) req.headers = { ...req.headers, ...resolved };
     }
+    return true;
   } catch (cause) {
+    req.url = originalUrl;
+    req.headers = originalHeaders;
+    ctx.url = originalUrl;
     report(policyError(ctx, cause));
+    return false;
   }
 }
 
-/**
- * Native playback (video/mp4, audio/mp3, HLS-without-MSE fallback): the
- * browser fetches `element.src` itself, so only the one top-level URL
- * (transformUrl) and `crossOrigin` (credentials) can apply - `headers` is
- * impossible and gets a warning instead of being silently dropped
- * (ADR-0001 D4). Shared by VideoPlayer/AudioPlayer/HlsPlayer's fallback
- * branch - the only difference between them is `element`/`type`/`engine`.
- */
-export function applyNativeLoad(element: HTMLMediaElement, src: string, type: RequestContext['type'], engine: string, policy: RequestPolicy | undefined, report: Report): string {
+// Defect 2 - crossOrigin is host-owned, restored on destroy() unless the host changed it since.
+// [0] = backup (pre-existing value), [1] = applied (last value we wrote; null also means "never captured").
+export type CrossOriginBackup = [backup: string | null, applied: string | null];
+
+export function restoreCrossOrigin(element: HTMLMediaElement, state: CrossOriginBackup): void {
+  const applied = state[1];
+  if (applied === null) return;
+  const backup = state[0];
+  state[0] = state[1] = null;
+  if (element.getAttribute('crossorigin') !== applied) return; // host changed it since - leave it
+  if (backup === null) element.removeAttribute('crossorigin');
+  else element.setAttribute('crossorigin', backup);
+}
+
+// Native playback: only URL/crossOrigin apply; `headers` warns. `report` fires synchronously - deferring is the caller's job (defect 3).
+export function applyNativeLoad(element: HTMLMediaElement, src: string, type: RequestContext['type'], engine: string, policy: RequestPolicy | undefined, report: Report, crossOriginState: CrossOriginBackup): string {
   let url = src;
   if (policy) {
     const ctx: RequestContext = { url: src, type, engine };
@@ -67,7 +74,11 @@ export function applyNativeLoad(element: HTMLMediaElement, src: string, type: Re
         report(policyError(ctx, cause));
       }
     }
-    if (policy.credentials) element.crossOrigin = policy.credentials === 'include' ? 'use-credentials' : 'anonymous';
+    if (policy.credentials) {
+      if (crossOriginState[1] === null) crossOriginState[0] = element.getAttribute('crossorigin');
+      element.crossOrigin = policy.credentials === 'include' ? 'use-credentials' : 'anonymous';
+      crossOriginState[1] = element.getAttribute('crossorigin');
+    }
     if (policy.headers) {
       ctx.url = url;
       reportHeadersUnsupported(ctx, report);
@@ -76,22 +87,21 @@ export function applyNativeLoad(element: HTMLMediaElement, src: string, type: Re
   return url;
 }
 
-/**
- * Deferred to a microtask (`Promise.resolve().then()`, not `queueMicrotask`
- * - ES2017 Smart TV target, see player-factory.ts's containerRequiredPlayer
- * for the same pattern): PlayerFactory.create() calls `player.load()`
- * synchronously, before UltraMediaCore.wireUp() (re)registers this load's
- * onError callback - by the time this runs, wireUp() has already run within
- * the same synchronous call stack, for both a brand new player and a reused
- * one (ADR-0001 D4).
- */
+// Synchronous; also used directly by YouTubePlayer.
 export function reportHeadersUnsupported(ctx: RequestContext, report: Report): void {
-  Promise.resolve().then(() => report({
+  report({
     fatal: false,
     category: 'otherError',
     code: 'REQUEST_HEADERS_UNSUPPORTED',
     message: ctx.engine + ' cannot set custom request headers for this source - the browser/SDK issues it without a header hook.',
     engine: ctx.engine,
     url: ctx.url,
-  }));
+  });
+}
+
+// Defect 3 - defers so wireUp() runs first, then drops the report if `isCurrent()` says a later load()/destroy() superseded it.
+export function deferredGuardedReport(report: Report, isCurrent: () => boolean): Report {
+  return (error) => {
+    Promise.resolve().then(() => isCurrent() && report(error));
+  };
 }

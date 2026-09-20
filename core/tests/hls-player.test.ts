@@ -348,7 +348,7 @@ async function setupPlayerWithConfig(requestPolicy?: RequestPolicy): Promise<{ p
 }
 
 function fakeXhr(): XMLHttpRequest {
-  return { setRequestHeader: jest.fn(), withCredentials: false } as unknown as XMLHttpRequest;
+  return { setRequestHeader: jest.fn(), open: jest.fn(), withCredentials: false } as unknown as XMLHttpRequest;
 }
 
 describe('HlsPlayer request policy (ADR-0001 D4)', () => {
@@ -390,13 +390,23 @@ describe('HlsPlayer request policy (ADR-0001 D4)', () => {
     expect(headers.mock.calls.map((c: any) => c[0].type)).toEqual(['key', 'manifest', 'other']);
   });
 
-  it('credentials:"include" sets xhr.withCredentials; other values leave it untouched', async () => {
-    const { config } = await setupPlayerWithConfig({ credentials: 'include' });
+  // result-cycle2.md defect 5 - XHR's `withCredentials` is a boolean, so
+  // 'omit' and 'same-origin' are indistinguishable through it (a same-origin
+  // XHR always sends cookies regardless of the flag - see README.md).
+  // `xhr.withCredentials` is assigned unconditionally in xhrSetup (not just
+  // `if` 'include'), so every value maps to exactly what the browser can
+  // actually tell apart: only 'include' -> true, everything else -> false.
+  it.each([
+    ['include', true],
+    ['omit', false],
+    ['same-origin', false],
+  ] as const)('credentials:"%s" sets xhr.withCredentials to %s', async (credentials, expected) => {
+    const { config } = await setupPlayerWithConfig({ credentials });
     const xhr = fakeXhr();
 
     config.xhrSetup(xhr, '', { url: 'https://example.com/a', type: 'manifest' });
 
-    expect(xhr.withCredentials).toBe(true);
+    expect(xhr.withCredentials).toBe(expected);
   });
 
   it('transformUrl runs before headers(ctx), which sees the transformed URL', async () => {
@@ -410,8 +420,32 @@ describe('HlsPlayer request policy (ADR-0001 D4)', () => {
 
     config.xhrSetup(xhr, context.url, context);
 
-    expect(context.url).toBe('https://example.com/master.m3u8?sig=1');
+    // context.url itself is never rewritten any more (see the retry-safety
+    // test below, defect 1) - the transformed URL is what the XHR actually
+    // opens at.
+    expect(xhr.open).toHaveBeenCalledWith('GET', 'https://example.com/master.m3u8?sig=1', true);
     expect(headers).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.com/master.m3u8?sig=1' }));
+  });
+
+  // result-cycle2.md defect 1 (Bloqueante) - hls.js's own BaseLoader.retry()
+  // (node_modules/hls.js/dist/hls.js ~38859-38873) reuses this exact
+  // `context` object on every retry attempt, calling xhrSetup again with it
+  // unchanged. Before the fix, xhrSetup wrote the transformed URL back onto
+  // `context.url`, so the second call transformed an already-transformed
+  // URL (`?sig=1` -> `?sig=1&sig=1`).
+  it('retrying with the same context (hls.js BaseLoader.retry reuses it) does not double-apply transformUrl', async () => {
+    const { config } = await setupPlayerWithConfig({
+      transformUrl: (ctx) => ctx.url + (ctx.url.includes('?') ? '&' : '?') + 'sig=1',
+    });
+    const context: any = { url: 'https://example.com/seg1.m4s', type: 'media-fragment' };
+    const firstAttemptXhr = fakeXhr();
+    const retryXhr = fakeXhr();
+
+    config.xhrSetup(firstAttemptXhr, context.url, context); // first attempt
+    config.xhrSetup(retryXhr, context.url, context); // hls.js's own retry - same context object
+
+    expect(firstAttemptXhr.open).toHaveBeenCalledWith('GET', 'https://example.com/seg1.m4s?sig=1', true);
+    expect(retryXhr.open).toHaveBeenCalledWith('GET', 'https://example.com/seg1.m4s?sig=1', true);
   });
 
   it('a throwing headers()/transformUrl() reports REQUEST_POLICY_ERROR through onError instead of throwing', async () => {
@@ -423,6 +457,30 @@ describe('HlsPlayer request policy (ADR-0001 D4)', () => {
     const xhr = fakeXhr();
 
     expect(() => config.xhrSetup(xhr, '', { url: 'https://example.com/a', type: 'manifest' })).not.toThrow();
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ fatal: false, code: 'REQUEST_POLICY_ERROR', engine: 'hls.js' }));
+  });
+
+  // result-cycle2.md defect 4 - a `headers()` that throws *after* a
+  // successful `transformUrl()` used to leave the request in a mixed state
+  // (transformed URL, no headers, but still credentialed). On any policy
+  // callback failure the request now goes out exactly as it would with no
+  // policy at all: original URL, no headers, no credentials.
+  it('a headers() that throws after a successful transformUrl() rolls back the URL too and skips credentials, not just headers', async () => {
+    const { config, player } = await setupPlayerWithConfig({
+      transformUrl: (ctx) => ctx.url + '?sig=1',
+      headers: () => { throw new Error('token expired'); },
+      credentials: 'include',
+    });
+    const onError = jest.fn();
+    player.onError(onError);
+    const xhr = fakeXhr();
+    const context: any = { url: 'https://example.com/master.m3u8', type: 'manifest' };
+
+    config.xhrSetup(xhr, context.url, context);
+
+    expect(xhr.open).toHaveBeenCalledWith('GET', 'https://example.com/master.m3u8', true);
+    expect(context.headers).toBeUndefined();
+    expect(xhr.withCredentials).toBe(false);
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ fatal: false, code: 'REQUEST_POLICY_ERROR', engine: 'hls.js' }));
   });
 
@@ -447,6 +505,18 @@ describe('HlsPlayer request policy (ADR-0001 D4)', () => {
     expect(initParams.headers.get('Authorization')).toBe('Bearer t');
     expect(initParams.credentials).toBe('include');
     delete (global as any).Request;
+  });
+
+  // result-cycle2.md defect 6 (Registrar, não implementar) - DRM is P2, out
+  // of scope for this cycle. hls.js applies license requests through a
+  // *separate* `config.licenseXhrSetup` hook (node_modules/hls.js/dist/hls.js
+  // ~39462, consumed at ~27442-27470), never through the `xhrSetup`/
+  // `fetchSetup` this file sets - so options.request does not reach license
+  // requests today. TODO(drm): wire licenseXhrSetup once DRM is in scope
+  // (docs/adr/0001-headless-core-and-element-shell.md D7).
+  it('never sets config.licenseXhrSetup - options.request does not reach DRM license requests (documents current behavior)', async () => {
+    const { config } = await setupPlayerWithConfig({ headers: { Authorization: 'Bearer t' } });
+    expect(config.licenseXhrSetup).toBeUndefined();
   });
 
   it('configure()-style: a later load() with a different request policy changes what the next request carries, without recreating the hls.js instance', async () => {
@@ -493,5 +563,51 @@ describe('HlsPlayer native HLS fallback request policy (no MSE - ADR-0001 D4)', 
     await Promise.resolve();
     expect(onError).toHaveBeenCalledTimes(1);
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ fatal: false, code: 'REQUEST_HEADERS_UNSUPPORTED', engine: 'hls.js' }));
+  });
+
+  // result-cycle2.md defect 2 - same crossOrigin-restore contract as
+  // VideoPlayer/AudioPlayer (native-players-error.test.ts), for the one
+  // other place applyNativeLoad's crossOrigin write happens: hls.js's own
+  // no-MSE native fallback.
+  it('destroy() restores crossOrigin to what it was before the native fallback load (including absent)', async () => {
+    (window as any).Hls = jest.fn().mockImplementation(() => ({ attachMedia: jest.fn(), on: jest.fn(), loadSource: jest.fn(), destroy: jest.fn() }));
+    (window as any).Hls.Events = { ERROR: 'hlsError', MANIFEST_PARSED: 'hlsManifestParsed' };
+    (window as any).Hls.isSupported = jest.fn().mockReturnValue(false);
+
+    const nativeEl = createVideoElement();
+    nativeEl.canPlayType = jest.fn().mockReturnValue('maybe');
+    const player = new HlsPlayer(nativeEl, { credentials: 'include' });
+    await player.onReady;
+    expect(nativeEl.hasAttribute('crossorigin')).toBe(false);
+
+    player.load('https://example.com/master.m3u8', { credentials: 'include' });
+    expect(nativeEl.crossOrigin).toBe('use-credentials');
+
+    player.destroy();
+
+    expect(nativeEl.hasAttribute('crossorigin')).toBe(false);
+  });
+
+  // result-cycle2.md defect 3(b)/(c) - same generation-gating contract as
+  // VideoPlayer/AudioPlayer for a policy warning scheduled by this branch.
+  it('a load() immediately superseded by another one before its deferred headers-unsupported warning fires reports nothing for the stale load', async () => {
+    (window as any).Hls = jest.fn().mockImplementation(() => ({ attachMedia: jest.fn(), on: jest.fn(), loadSource: jest.fn(), destroy: jest.fn() }));
+    (window as any).Hls.Events = { ERROR: 'hlsError', MANIFEST_PARSED: 'hlsManifestParsed' };
+    (window as any).Hls.isSupported = jest.fn().mockReturnValue(false);
+
+    const nativeEl = createVideoElement();
+    nativeEl.canPlayType = jest.fn().mockReturnValue('maybe');
+    const player = new HlsPlayer(nativeEl);
+    await player.onReady;
+    const onError = jest.fn();
+    player.onError(onError);
+
+    player.load('https://example.com/a.m3u8', { headers: { Authorization: 'Bearer t' } });
+    player.load('https://example.com/b.m3u8'); // supersedes A before its deferred warning fires
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onError).not.toHaveBeenCalled();
   });
 });

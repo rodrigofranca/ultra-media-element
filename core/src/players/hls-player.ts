@@ -1,6 +1,6 @@
 import type { IMediaPlayer, MediaTracks, MediaPlayerError, MediaErrorCategory } from "../core/media-player";
 import type { RequestContext, RequestPolicy } from "../core/request-policy";
-import { applyRequestPolicy, applyNativeLoad, type RequestPatch } from "../core/apply-request-policy";
+import { applyRequestPolicy, applyNativeLoad, deferredGuardedReport, restoreCrossOrigin, type RequestPatch, type CrossOriginBackup } from "../core/apply-request-policy";
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
@@ -70,6 +70,9 @@ export class HlsPlayer implements IMediaPlayer {
   // set outside its own API, so it never cleaned it up - destroy() must
   // also tear down that path explicitly (see result-cycle3.md, defect 2).
   private usingNativeFallback = false;
+  // Native-HLS-fallback branch of applyLoad() only (defects 2/3).
+  private crossOriginState: CrossOriginBackup = [null, null];
+  private loadGeneration = 0;
 
   constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy) {
     log("Powered by Hls.js");
@@ -82,15 +85,19 @@ export class HlsPlayer implements IMediaPlayer {
     // still applies if a host does that (ADR-0001 D4, "cubra os dois
     // caminhos").
     this.config = {
+      // hls.js's retry (BaseLoader ~38859) reuses `context` unchanged, so
+      // mutating context.url used to double-sign it (defect 1) - open the
+      // XHR at the transformed URL ourselves instead.
       xhrSetup: (xhr: XMLHttpRequest, _url: string, context: any) => {
         const req = this.applyContextPolicy(context);
-        context.url = req.url;
+        xhr.open('GET', req.url, true);
         context.headers = req.headers;
-        if (this.requestPolicy?.credentials === 'include') xhr.withCredentials = true;
+        xhr.withCredentials = req.ok && this.requestPolicy?.credentials === 'include'; // defects 4/5
       },
       fetchSetup: (context: any, initParams: any) => {
         const req = this.applyContextPolicy(context);
-        if (this.requestPolicy?.credentials) initParams.credentials = this.requestPolicy.credentials;
+        // fetch's `credentials` is where 'omit' is real (defect 5).
+        if (req.ok && this.requestPolicy?.credentials) initParams.credentials = this.requestPolicy.credentials;
         if (req.headers) for (const key in req.headers) initParams.headers.set(key, req.headers[key]);
         return new Request(req.url, initParams);
       },
@@ -100,10 +107,10 @@ export class HlsPlayer implements IMediaPlayer {
     });
   }
 
-  private applyContextPolicy(context: any): RequestPatch {
+  private applyContextPolicy(context: any): RequestPatch & { ok: boolean } {
     const ctx: RequestContext = { url: context.url, type: classifyHlsRequestType(context.type), engine: 'hls.js' };
-    const req: RequestPatch = { url: context.url, headers: context.headers };
-    applyRequestPolicy(this.requestPolicy, ctx, req, (e) => this.errorCallback?.(e));
+    const req: RequestPatch & { ok: boolean } = { url: context.url, headers: context.headers, ok: true };
+    req.ok = applyRequestPolicy(this.requestPolicy, ctx, req, (e) => this.errorCallback?.(e));
     return req;
   }
 
@@ -183,7 +190,11 @@ export class HlsPlayer implements IMediaPlayer {
       // No MSE here - the browser itself fetches the manifest/segments
       // (ADR-0001 D4, same limitation as VideoPlayer/AudioPlayer).
       this.usingNativeFallback = true;
-      this.nativeEl.src = applyNativeLoad(this.nativeEl, src, 'manifest', 'hls.js', this.requestPolicy, (e) => this.errorCallback?.(e));
+      const generation = this.loadGeneration;
+      this.nativeEl.src = applyNativeLoad(this.nativeEl, src, 'manifest', 'hls.js', this.requestPolicy, deferredGuardedReport(
+        (e) => this.errorCallback?.(e),
+        () => !this.destroyed && generation === this.loadGeneration,
+      ), this.crossOriginState);
     } else {
       console.error("HLS não suportado no navegador.");
     }
@@ -236,9 +247,11 @@ export class HlsPlayer implements IMediaPlayer {
       this.nativeEl.removeAttribute('src');
       this.nativeEl.load();
     }
+    restoreCrossOrigin(this.nativeEl, this.crossOriginState);
   }
 
   load(src: string, requestPolicy?: RequestPolicy) {
+    this.loadGeneration++;
     this.pendingSrc = src;
     this.requestPolicy = requestPolicy;
     if (this.destroyed || !this.hls) return;
