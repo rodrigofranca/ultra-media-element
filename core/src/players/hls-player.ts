@@ -1,9 +1,23 @@
 import type { IMediaPlayer, MediaTracks, MediaPlayerError, MediaErrorCategory } from "../core/media-player";
+import type { RequestContext, RequestPolicy } from "../core/request-policy";
+import { applyRequestPolicy, applyNativeLoad, type RequestPatch } from "../core/apply-request-policy";
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
 import { HLS_JS_SDK_URL } from "../core/sdk-config";
 import { mapNativeMediaError } from "./native-media-error";
+
+// hls.js's LoaderContextType values (node_modules/hls.js/dist/hls.d.ts) -
+// MANIFEST/LEVEL/AUDIO_TRACK/SUBTITLE_TRACK/STEERING_MANIFEST are all
+// playlist-shaped requests, MEDIA_FRAGMENT is a segment, KEY is a key;
+// SERVER_CERTIFICATE/INTERSTITIAL_ASSET_LIST fall back to 'other' (ADR-0001 D4).
+const HLS_MANIFEST_TYPES = new Set(['manifest', 'level', 'audioTrack', 'subtitleTrack', 'steering-manifest']);
+function classifyHlsRequestType(type: string): RequestContext['type'] {
+  if (HLS_MANIFEST_TYPES.has(type)) return 'manifest';
+  if (type === 'media-fragment') return 'segment';
+  if (type === 'key') return 'key';
+  return 'other';
+}
 
 // hls.js's own ErrorTypes ('networkError' | 'mediaError' | 'keySystemError'
 // | 'muxError' | 'otherError') already line up with our category taxonomy
@@ -27,9 +41,15 @@ export class HlsPlayer implements IMediaPlayer {
   private Hls: any;
   private hls: any;
   private sdkSrc: string = HLS_JS_SDK_URL;
-  private config = {}
+  private config: any;
   private tracksChangeCallback?: (tracks: MediaTracks) => void;
   private errorCallback?: (error: MediaPlayerError) => void;
+  // Read live by the xhrSetup/fetchSetup closures below at request time
+  // (not baked into `config` once, at Hls-instance-construction time) - so
+  // `configure({ request })` + a later load() of the same engine (which
+  // reuses this player instance, see load() below) changes what the next
+  // requests carry without recreating the hls.js instance (ADR-0001 D4).
+  private requestPolicy?: RequestPolicy;
   // Guards the race between destroy()/a format-changing src swap and the
   // async CDN script load: player-factory.ts no longer waits on `onReady`
   // before returning, so `destroy()` can land here while `setup()` is still
@@ -51,12 +71,40 @@ export class HlsPlayer implements IMediaPlayer {
   // also tear down that path explicitly (see result-cycle3.md, defect 2).
   private usingNativeFallback = false;
 
-  constructor(private element: HTMLVideoElement) {
+  constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy) {
     log("Powered by Hls.js");
     this.nativeEl = element;
+    this.requestPolicy = requestPolicy;
+    // hls.js's default loader is XhrLoader (node_modules/hls.js/dist/hls.js
+    // ~L38191 - FetchLoader is commented out there), so xhrSetup is the path
+    // that actually runs unless a host opts into `config.loader`/FetchLoader
+    // itself; fetchSetup is wired up the same way regardless, so the policy
+    // still applies if a host does that (ADR-0001 D4, "cubra os dois
+    // caminhos").
+    this.config = {
+      xhrSetup: (xhr: XMLHttpRequest, _url: string, context: any) => {
+        const req = this.applyContextPolicy(context);
+        context.url = req.url;
+        context.headers = req.headers;
+        if (this.requestPolicy?.credentials === 'include') xhr.withCredentials = true;
+      },
+      fetchSetup: (context: any, initParams: any) => {
+        const req = this.applyContextPolicy(context);
+        if (this.requestPolicy?.credentials) initParams.credentials = this.requestPolicy.credentials;
+        if (req.headers) for (const key in req.headers) initParams.headers.set(key, req.headers[key]);
+        return new Request(req.url, initParams);
+      },
+    };
     this.onReady = new Promise((resolve, reject) => {
       this.setup().then(resolve).catch(reject);
     });
+  }
+
+  private applyContextPolicy(context: any): RequestPatch {
+    const ctx: RequestContext = { url: context.url, type: classifyHlsRequestType(context.type), engine: 'hls.js' };
+    const req: RequestPatch = { url: context.url, headers: context.headers };
+    applyRequestPolicy(this.requestPolicy, ctx, req, (e) => this.errorCallback?.(e));
+    return req;
   }
 
   private async setup() {
@@ -132,8 +180,10 @@ export class HlsPlayer implements IMediaPlayer {
       this.usingNativeFallback = false;
       this.hls.loadSource(src);
     } else if (this.nativeEl.canPlayType("application/vnd.apple.mpegurl")) {
+      // No MSE here - the browser itself fetches the manifest/segments
+      // (ADR-0001 D4, same limitation as VideoPlayer/AudioPlayer).
       this.usingNativeFallback = true;
-      this.nativeEl.src = src;
+      this.nativeEl.src = applyNativeLoad(this.nativeEl, src, 'manifest', 'hls.js', this.requestPolicy, (e) => this.errorCallback?.(e));
     } else {
       console.error("HLS não suportado no navegador.");
     }
@@ -188,8 +238,9 @@ export class HlsPlayer implements IMediaPlayer {
     }
   }
 
-  load(src: string) {
+  load(src: string, requestPolicy?: RequestPolicy) {
     this.pendingSrc = src;
+    this.requestPolicy = requestPolicy;
     if (this.destroyed || !this.hls) return;
     this.applyLoad(src);
   }
