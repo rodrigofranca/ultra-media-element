@@ -175,13 +175,124 @@ describe('request property (ADR-0001 D4)', () => {
   });
 });
 
-describe('isLive (Descoberta: dead attribute)', () => {
-  it('defaults to false and is unaffected by the "live" attribute', () => {
+// ADR-0001 D5. Before this step the `live` attribute existed in
+// observedAttributes with no effect at all (see docs/adr/0001's D5 section);
+// now it seeds options.live, and isLive/liveInfo/goToLive mirror core.live.
+describe('live (ADR-0001 D5)', () => {
+  afterEach(() => {
+    (PlayerFactory.create as jest.Mock).mockReset();
+  });
+
+  it('defaults to false/undefined with no core, and with no load()', () => {
     const el = createElement();
     expect(el.isLive).toBe(false);
+    expect(el.liveInfo).toBeUndefined();
+    expect(el.streamType).toBe('on-demand');
+    expect(Number.isNaN(el.targetLiveWindow)).toBe(true);
 
     el.setAttribute('live', '');
     expect(el.isLive).toBe(false);
+  });
+
+  it('the "live" attribute present at core creation is options.live: true; absent is \'auto\'', () => {
+    let captured: unknown;
+    (PlayerFactory.create as jest.Mock).mockImplementation(((props: any) => {
+      captured = props.live;
+      return fakePlayer();
+    }) as any);
+
+    const el = createElement();
+    el.setAttribute('live', '');
+    document.body.appendChild(el);
+    el.src = 'https://example.com/live.m3u8';
+
+    expect(captured).toBe(true);
+    el.remove();
+  });
+
+  it('a later "live" attribute change calls core.configure({ live }), not a reload', () => {
+    (PlayerFactory.create as jest.Mock).mockImplementation((() => fakePlayer()) as any);
+
+    const el = createElement();
+    document.body.appendChild(el);
+    el.src = 'https://example.com/a.mp4';
+
+    const configureSpy = jest.spyOn((el as any).core, 'configure');
+    el.setAttribute('live', '');
+    expect(configureSpy).toHaveBeenCalledWith({ live: true });
+
+    el.removeAttribute('live');
+    expect(configureSpy).toHaveBeenCalledWith({ live: 'auto' });
+    el.remove();
+  });
+
+  it('isLive/liveInfo/streamType/targetLiveWindow mirror the core once the engine reports live, and goToLive() delegates', () => {
+    let liveCb: ((isLive: boolean, playheadDate: Date | null) => void) | undefined;
+    const goToLive = jest.fn();
+    (PlayerFactory.create as jest.Mock).mockImplementation((() => fakePlayer({
+      onLiveChange: (cb: (isLive: boolean, playheadDate: Date | null) => void) => { liveCb = cb; },
+      goToLive,
+    })) as any);
+
+    const el = createElement();
+    document.body.appendChild(el);
+    el.src = 'https://example.com/live.m3u8';
+
+    Object.defineProperty((el as any).nativeEl, 'seekable', {
+      configurable: true,
+      value: { length: 1, start: () => 0, end: () => 20 },
+    });
+
+    liveCb?.(true, new Date('2026-01-01T00:00:00Z'));
+
+    expect(el.isLive).toBe(true);
+    expect(el.liveInfo?.isLive).toBe(true);
+    expect(el.streamType).toBe('live');
+    expect(el.targetLiveWindow).toBe(0); // 20s window, under the 30s DVR threshold
+
+    el.goToLive();
+    expect(goToLive).toHaveBeenCalledTimes(1);
+
+    el.remove();
+  });
+
+  it('livechange/streamended re-dispatch as CustomEvents, and drive streamtypechange/targetlivewindowchange', () => {
+    let liveCb: ((isLive: boolean, playheadDate: Date | null) => void) | undefined;
+    let endedCb: (() => void) | undefined;
+    (PlayerFactory.create as jest.Mock).mockImplementation((() => fakePlayer({
+      onLiveChange: (cb: (isLive: boolean, playheadDate: Date | null) => void) => { liveCb = cb; },
+      onStreamEnded: (cb: () => void) => { endedCb = cb; },
+    })) as any);
+
+    const el = createElement();
+    document.body.appendChild(el);
+    el.src = 'https://example.com/live.m3u8';
+    Object.defineProperty((el as any).nativeEl, 'seekable', {
+      configurable: true,
+      value: { length: 1, start: () => 0, end: () => 20 },
+    });
+
+    const livechange = jest.fn();
+    const streamended = jest.fn();
+    const streamtypechange = jest.fn();
+    const targetlivewindowchange = jest.fn();
+    el.addEventListener('livechange', livechange);
+    el.addEventListener('streamended', streamended);
+    el.addEventListener('streamtypechange', streamtypechange);
+    el.addEventListener('targetlivewindowchange', targetlivewindowchange);
+
+    liveCb?.(true, null);
+    expect(livechange).toHaveBeenCalledTimes(1);
+    expect((livechange.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ isLive: true });
+    expect(streamtypechange).toHaveBeenCalledTimes(1);
+    expect(targetlivewindowchange).toHaveBeenCalledTimes(1);
+
+    endedCb?.();
+    expect(streamended).toHaveBeenCalledTimes(1);
+    // streamended's own livechange (core.wireUp) fires the two synthetic events again.
+    expect(streamtypechange).toHaveBeenCalledTimes(2);
+
+    el.remove();
   });
 });
 

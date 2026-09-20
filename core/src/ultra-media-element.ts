@@ -1,4 +1,4 @@
-import type { MediaPlayerError } from './core/media-player';
+import type { MediaPlayerError, LiveInfo } from './core/media-player';
 import type { RequestPolicy } from './core/request-policy';
 import { CustomVideoElement, Events as CustomMediaEvents } from 'custom-media-element';
 import { MediaTracksMixin } from 'media-tracks';
@@ -70,8 +70,39 @@ export class UltraMediaElement extends MediaTracksMixin(CustomVideoElement) {
   // the core's error routing the only source of `error`/`warning`, for
   // every engine.
   static Events = CustomMediaEvents.filter((type) => type !== 'error');
-  public isLive = false;
   private _request?: RequestPolicy;
+
+  /** Mirrors core.live.isLive - kept as its own field name (pre-D5 public API), not renamed. */
+  get isLive(): boolean { return this.core?.live.isLive ?? false; }
+  /** ADR-0001 D5 - undefined before any load(). */
+  get liveInfo(): LiveInfo | undefined { return this.core?.live; }
+  goToLive(): void { this.core?.goToLive(); }
+
+  // media-chrome compatibility (ADR-0001 D3/D5 - confirmed against
+  // node_modules/media-chrome/dist/media-store/state-mediator.js's
+  // mediaStreamType/mediaTargetLiveWindow): these aren't native
+  // HTMLVideoElement properties, so custom-media-element's native-prop
+  // forwarding (see docs/adr/0001, D3) never exposes them on their own -
+  // unlike `seekable`/`currentTime`/`duration`, which it already forwards
+  // and which mediaSeekable/mediaCurrentTime/mediaTimeIsLive read directly.
+  get streamType(): 'live' | 'on-demand' { return this.core?.live.isLive ? 'live' : 'on-demand'; }
+  get targetLiveWindow(): number {
+    const live = this.core?.live;
+    if (!live?.isLive) return NaN;
+    return live.dvr ? live.seekableEnd - live.seekableStart : 0;
+  }
+  // mediaTimeIsLive's own fallback (state-mediator.js) is `seekable.end -
+  // liveEdgeOffset` with a *default 10s offset* - larger than a short DVR
+  // window, making "not live" unreachable by seeking back within it. Our
+  // own edge, 2s of tolerance behind seekableEnd (not an exact match -
+  // playback is essentially always at least a little behind the
+  // instantaneous edge: decode/buffering latency, the ~1s cadence a live
+  // window itself grows at - an exact match made this flicker false right
+  // after a real goToLive(), confirmed against a real browser).
+  get liveEdgeStart(): number {
+    const live = this.core?.live;
+    return live?.isLive ? live.seekableEnd - 2 : NaN;
+  }
 
   // No HTML attribute for this (ADR-0001 D4) - headers carrying tokens
   // don't belong in markup. configure() only affects the next core.load(),
@@ -199,6 +230,14 @@ export class UltraMediaElement extends MediaTracksMixin(CustomVideoElement) {
       super.attributeChangedCallback?.(attrName, oldValue, newValue);
     }
 
+    if (attrName === 'live') {
+      // ADR-0001 D5 - like `request`, only takes effect starting with the
+      // next core.load(); doesn't retroactively rewire an already-running
+      // engine's live handling.
+      this.core?.configure({ live: this.hasAttribute('live') ? true : 'auto' });
+      return;
+    }
+
     if (attrName !== 'src') return;
 
     // A no-op unless something actually needs to (re)start: either the
@@ -250,7 +289,11 @@ export class UltraMediaElement extends MediaTracksMixin(CustomVideoElement) {
     // (see result-cycle2.md, defect 2). Falls back to `this` only for a
     // shadow-DOM-less test double - by the time nativeEl exists,
     // custom-media-element has always already attached a real shadow root.
-    const core = new UltraMediaCore(this.nativeEl, { container: this.shadowRoot ?? this, request: this._request });
+    const core = new UltraMediaCore(this.nativeEl, {
+      container: this.shadowRoot ?? this,
+      request: this._request,
+      live: this.hasAttribute('live') ? true : 'auto',
+    });
 
     core.addEventListener<MediaPlayerError>('error', (event) => this.forwardCoreEvent('error', event));
     core.addEventListener<MediaPlayerError>('warning', (event) => this.forwardCoreEvent('warning', event));
@@ -259,11 +302,22 @@ export class UltraMediaElement extends MediaTracksMixin(CustomVideoElement) {
     // resyncing from the core's current, already-up-to-date lists on either
     // one is enough; listening to just this one avoids doing it twice.
     core.addEventListener('renditionschange', () => this.syncMediaTracks());
+    // media-chrome's mediaStreamType/mediaTargetLiveWindow only re-read the
+    // getters above on these two synthetic events (see their mediaEvents
+    // lists in media-chrome/dist/media-store/state-mediator.js) - dispatched
+    // on every livechange (streamended always fires its own livechange
+    // first, in UltraMediaCore.wireUp, so it's covered too).
+    core.addEventListener<LiveInfo>('livechange', (event) => {
+      this.forwardCoreEvent('livechange', event);
+      this.dispatchEvent(new Event('streamtypechange'));
+      this.dispatchEvent(new Event('targetlivewindowchange'));
+    });
+    core.addEventListener('streamended', (event) => this.forwardCoreEvent('streamended', event));
 
     return core;
   }
 
-  private forwardCoreEvent(type: 'error' | 'warning', event: UltraMediaCoreEvent<MediaPlayerError>): void {
+  private forwardCoreEvent<T>(type: string, event: UltraMediaCoreEvent<T>): void {
     this.dispatchEvent(new CustomEvent(type, {
       bubbles: true,
       composed: true,
