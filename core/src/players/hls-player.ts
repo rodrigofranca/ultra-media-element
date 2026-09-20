@@ -107,9 +107,21 @@ export class HlsPlayer implements IMediaPlayer {
     });
   }
 
+  // hls.js reuses the same `context` object across retries (BaseLoader
+  // ~38859), and we write the policied headers back into it - so the
+  // pristine url/headers are remembered per context the first time we see
+  // it, and every attempt (and every rollback) starts from those, never
+  // from what a previous attempt already applied.
+  private pristineContexts = new WeakMap<object, { url: string; headers?: Record<string, string> }>();
+
   private applyContextPolicy(context: any): RequestPatch & { ok: boolean } {
-    const ctx: RequestContext = { url: context.url, type: classifyHlsRequestType(context.type), engine: 'hls.js' };
-    const req: RequestPatch & { ok: boolean } = { url: context.url, headers: context.headers, ok: true };
+    let pristine = this.pristineContexts.get(context);
+    if (!pristine) {
+      pristine = { url: context.url, headers: context.headers };
+      this.pristineContexts.set(context, pristine);
+    }
+    const ctx: RequestContext = { url: pristine.url, type: classifyHlsRequestType(context.type), engine: 'hls.js' };
+    const req: RequestPatch & { ok: boolean } = { url: pristine.url, headers: pristine.headers, ok: true };
     req.ok = applyRequestPolicy(this.requestPolicy, ctx, req, (e) => this.errorCallback?.(e));
     return req;
   }

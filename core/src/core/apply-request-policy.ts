@@ -63,26 +63,32 @@ export function restoreCrossOrigin(element: HTMLMediaElement, state: CrossOrigin
 }
 
 // Native playback: only URL/crossOrigin apply; `headers` warns. `report` fires synchronously - deferring is the caller's job (defect 3).
+// All-or-nothing per load: if transformUrl() throws, nothing of the policy is applied (no credentials write either).
+// A load without `credentials` undoes what an earlier load on the same element wrote (crossOrigin is host-owned).
 export function applyNativeLoad(element: HTMLMediaElement, src: string, type: RequestContext['type'], engine: string, policy: RequestPolicy | undefined, report: Report, crossOriginState: CrossOriginBackup): string {
   let url = src;
+  let policyOk = !!policy;
   if (policy) {
     const ctx: RequestContext = { url: src, type, engine };
     if (policy.transformUrl) {
       try {
         url = policy.transformUrl(ctx) || src;
       } catch (cause) {
+        policyOk = false;
         report(policyError(ctx, cause));
       }
     }
-    if (policy.credentials) {
-      if (crossOriginState[1] === null) crossOriginState[0] = element.getAttribute('crossorigin');
-      element.crossOrigin = policy.credentials === 'include' ? 'use-credentials' : 'anonymous';
-      crossOriginState[1] = element.getAttribute('crossorigin');
-    }
-    if (policy.headers) {
+    if (policyOk && policy.headers) {
       ctx.url = url;
       reportHeadersUnsupported(ctx, report);
     }
+  }
+  if (policyOk && policy!.credentials) {
+    if (crossOriginState[1] === null) crossOriginState[0] = element.getAttribute('crossorigin');
+    element.crossOrigin = policy!.credentials === 'include' ? 'use-credentials' : 'anonymous';
+    crossOriginState[1] = element.getAttribute('crossorigin');
+  } else {
+    restoreCrossOrigin(element, crossOriginState);
   }
   return url;
 }
