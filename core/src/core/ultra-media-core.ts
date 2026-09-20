@@ -1,4 +1,5 @@
 import type { IMediaPlayer, MediaTracks, MediaPlayerError, VideoRendition, MediaTrack } from './media-player';
+import type { RequestPolicy } from './request-policy';
 import { PlayerFactory } from './player-factory';
 import { Format } from './format';
 import { detectFormat } from './format-detector';
@@ -38,6 +39,14 @@ export interface UltraMediaCoreOptions {
   // keeping it agnostic to what kind of Node it was given.
   /** Where engines that render outside the <video> (YouTube) mount their view. */
   container?: Node;
+  /**
+   * Auth headers/credentials/URL rewriting applied to every engine's
+   * requests where technically possible (ADR-0001 D4). Set at construction
+   * or via configure() - configure() only takes effect starting with the
+   * next load(); an in-progress load()'s own requests keep whatever policy
+   * was active when that load() ran.
+   */
+  request?: RequestPolicy;
 }
 
 export type UltraMediaCoreEventType =
@@ -181,13 +190,14 @@ export class UltraMediaCore extends Emitter {
     }
 
     if (this.player && this._format === newFormat) {
-      this.player.load(src);
+      this.player.load(src, this.options.request);
     } else {
       this.player = PlayerFactory.create({
         src,
         element: this.media as HTMLVideoElement,
         container: this.options.container,
         format: newFormat ?? undefined,
+        requestPolicy: this.options.request,
       });
       // Learned directly from the same resolution PlayerFactory.create()
       // just used, not read back off the <video> - the core no longer
@@ -258,6 +268,15 @@ export class UltraMediaCore extends Emitter {
     // is the only place stale renditions/audioTracks otherwise get cleared.
     this.emit('audiotrackschange', { audioTracks: this._audioTracks });
     this.emit('renditionschange', { renditions: this._renditions });
+  }
+
+  /**
+   * Merges into this core's options (today only `request` is meaningful
+   * here - `container` is only ever read at construction). Takes effect
+   * starting with the next load() call - see UltraMediaCoreOptions.request.
+   */
+  configure(options: Partial<UltraMediaCoreOptions>): void {
+    this.options = { ...this.options, ...options };
   }
 
   /** Idempotent. Leaves `media` clean and reusable by this core or a new one. */
