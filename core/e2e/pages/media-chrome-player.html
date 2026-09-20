@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ultra-media + media-chrome e2e harness</title>
+  <!-- Local devDependency copy only (hermetic.ts blocks anything else) -
+       pre-bundled into one file by e2e/scripts/bundle-media-chrome.mjs
+       (see its header comment for why: unbundled, this was ~70 separate
+       module requests per page load) and served from
+       e2e/server/static-server.mjs's /generated/ route. -->
+  <script type="module" src="/dist/ultra-media.es.js"></script>
+  <script type="module" src="/generated/media-chrome-bundle.js"></script>
+</head>
+<body>
+  <media-controller id="controller">
+    <ultra-media id="player" slot="media" playsinline></ultra-media>
+    <media-rendition-menu id="rendition-menu" hidden anchor="auto"></media-rendition-menu>
+    <media-control-bar>
+      <media-play-button></media-play-button>
+      <media-mute-button></media-mute-button>
+      <media-time-display></media-time-display>
+      <media-time-range></media-time-range>
+      <media-playback-rate-button></media-playback-rate-button>
+      <media-rendition-menu-button invoketarget="rendition-menu"></media-rendition-menu-button>
+    </media-control-bar>
+  </media-controller>
+</body>
+</html>

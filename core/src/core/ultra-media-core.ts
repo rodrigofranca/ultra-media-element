@@ -12,11 +12,12 @@ import { detectFormat } from './format-detector';
  *
  * Dependency rule (enforced by tests/core-dependency-guard.test.ts and the
  * dist/ultra-media-core content check in tests/public-contract.test.ts):
- * nothing this file imports may pull in `super-media-element`,
- * `media-tracks`, the element shell, or use Custom Elements, Shadow DOM,
- * `ResizeObserver`, the `EventTarget` constructor, or `#` private fields -
- * the oldest Smart TV runtimes this is meant to run on may lack all of
- * those (ADR-0001, open question 1).
+ * nothing this file imports may pull in the element shell's own base class
+ * (the Mux custom-element mixin it extends - see docs/adr/0001, D3),
+ * `media-tracks`, the element shell itself, or use Custom Elements, Shadow
+ * DOM, `ResizeObserver`, the `EventTarget` constructor, or `#` private
+ * fields - the oldest Smart TV runtimes this is meant to run on may lack
+ * all of those (ADR-0001, open question 1).
  */
 export type UltraMediaSource = string | { src: string; type?: Format };
 

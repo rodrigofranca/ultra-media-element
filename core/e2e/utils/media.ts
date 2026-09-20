@@ -12,12 +12,31 @@ const INSTRUMENTED_EVENTS = [
   'error',
   'warning',
   'emptied',
+  'abort',
+  'loadstart',
+  'suspend',
+  'stalled',
+  'canplay',
 ] as const;
 
 /** Navigates to the harness page hosting a bare <ultra-media> element. */
 export async function gotoPlayer(page: Page): Promise<void> {
   await page.goto('/player.html');
   await page.waitForFunction(() => customElements.get('ultra-media') !== undefined);
+}
+
+/**
+ * Forces the teardown/reload race window open via CDP instead of relying on
+ * ambient host load - deterministic on a fast, idle machine, unlike hoping a
+ * shared CI/dev box happens to be slow enough when a run lands (see
+ * result-cycle3.md's diagnosis: ambient load could not be used as the
+ * reproduction signal, it never correlated with the specific defect under
+ * test). `rate` follows CDP's `Emulation.setCPUThrottlingRate` (1 = no
+ * throttling; 10 = the renderer runs as if on a CPU 10x slower).
+ */
+export async function throttleCpu(page: Page, rate: number): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate });
 }
 
 /**
@@ -29,14 +48,32 @@ export async function instrument(page: Page, selector = SELECTOR): Promise<void>
   await page.evaluate(
     ({ selector, events }) => {
       const el = document.querySelector(selector) as HTMLVideoElement;
-      const w = window as unknown as { __log: Array<{ name: string; currentTime: number; detail: unknown }> };
+      const w = window as unknown as {
+        __log: Array<{
+          name: string;
+          currentTime: number;
+          detail: unknown;
+          t: number;
+          src: string;
+          currentSrc: string;
+          networkState: number;
+          readyState: number;
+        }>;
+        __t0: number;
+      };
       w.__log = [];
+      w.__t0 = performance.now();
       for (const name of events) {
         el.addEventListener(name, (e) => {
           w.__log.push({
             name,
             currentTime: el.currentTime,
             detail: (e as CustomEvent).detail ?? null,
+            t: Math.round(performance.now() - w.__t0),
+            src: el.src,
+            currentSrc: el.currentSrc,
+            networkState: el.networkState,
+            readyState: el.readyState,
           });
         });
       }
@@ -45,7 +82,36 @@ export async function instrument(page: Page, selector = SELECTOR): Promise<void>
   );
 }
 
-export type LogEntry = { name: string; currentTime: number; detail: unknown };
+export type LogEntry = {
+  name: string;
+  currentTime: number;
+  detail: unknown;
+  t: number;
+  src: string;
+  currentSrc: string;
+  networkState: number;
+  readyState: number;
+};
+
+/** Snapshot of native <video> state - for dumping "what the test saw when it gave up" on a diagnostic timeout. */
+export function getNativeState(page: Page, selector = SELECTOR): Promise<{
+  src: string;
+  currentSrc: string;
+  networkState: number;
+  readyState: number;
+  currentTime: number;
+}> {
+  return page.evaluate((selector) => {
+    const el = document.querySelector(selector) as HTMLVideoElement;
+    return {
+      src: el.src,
+      currentSrc: el.currentSrc,
+      networkState: el.networkState,
+      readyState: el.readyState,
+      currentTime: el.currentTime,
+    };
+  }, selector);
+}
 
 export function getLog(page: Page): Promise<LogEntry[]> {
   return page.evaluate(() => (window as unknown as { __log: LogEntry[] }).__log ?? []);
@@ -54,7 +120,9 @@ export function getLog(page: Page): Promise<LogEntry[]> {
 /** Clears the event log without detaching the listeners instrument() attached. */
 export function resetLog(page: Page): Promise<void> {
   return page.evaluate(() => {
-    (window as unknown as { __log: LogEntry[] }).__log = [];
+    const w = window as unknown as { __log: LogEntry[]; __t0: number };
+    w.__log = [];
+    w.__t0 = performance.now();
   });
 }
 

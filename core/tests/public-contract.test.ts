@@ -5,16 +5,16 @@ import type { MediaPlayerError } from '../src/core/media-player';
 
 // Freezes the *own* part of <ultra-media>'s effective public API (ADR-0001,
 // Fase 1) - the rules UltraMediaElement itself applies on top of whatever it
-// inherits. The real inherited surface (super-media-element's native
+// inherits. The real inherited surface (custom-media-element's native
 // passthrough, media-tracks) is frozen against the actual built bundle in a
 // real browser instead - see e2e/tests/public-contract.spec.ts and
 // docs/public-api.md for why jsdom isn't enough for that part.
 //
 // Same minimal stand-ins as ultra-media-element-lifecycle.test.ts, and for
-// the same reason: super-media-element/media-tracks ship ESM-only and aren't
-// part of Jest's transform pipeline.
-jest.mock('super-media-element', () => ({
-  SuperVideoElement: class extends HTMLElement {
+// the same reason: custom-media-element/media-tracks ship ESM-only and
+// aren't part of Jest's transform pipeline.
+jest.mock('custom-media-element', () => ({
+  CustomVideoElement: class extends HTMLElement {
     static observedAttributes = ['src'];
     private __nativeEl?: HTMLVideoElement;
     get nativeEl() {

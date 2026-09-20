@@ -24,6 +24,7 @@ const FORBIDDEN_MARKERS = [
   'customElements',
   'attachShadow',
   'super-media-element',
+  'custom-media-element',
   'media-tracks',
   'ResizeObserver',
   'new EventTarget(',

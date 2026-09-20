@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ultra-media e2e harness - src present in markup before upgrade</title>
+  <script type="module" src="/dist/ultra-media.es.js"></script>
+</head>
+<body>
+  <!-- The most common real-world usage: src in the markup, parsed before the
+       element definition loads. The raw manifest URL must never reach the
+       inner <video> as its own src attribute. -->
+  <ultra-media id="player" muted playsinline src="/fixtures/hls/master.m3u8"></ultra-media>
+</body>
+</html>

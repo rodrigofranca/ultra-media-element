@@ -3,8 +3,8 @@ import { UltraMediaCore } from '../src/core/ultra-media-core';
 import { PlayerFactory } from '../src/core/player-factory';
 import type { IMediaPlayer, MediaPlayerError, MediaTracks } from '../src/core/media-player';
 
-// UltraMediaCore has zero dependency on super-media-element/media-tracks -
-// only PlayerFactory needs mocking here (same tracking-stub pattern the
+// UltraMediaCore has zero dependency on the element shell's base class or
+// media-tracks - only PlayerFactory needs mocking here (same tracking-stub pattern the
 // pre-extraction element tests already used), so this file needs none of
 // the base-class stand-ins ultra-media-element-lifecycle.test.ts does.
 jest.mock('../src/core/player-factory', () => {

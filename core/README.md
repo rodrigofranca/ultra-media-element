@@ -1,6 +1,6 @@
 # Ultra Media Element
 
-Web Component moderno para reprodução de vídeos em múltiplos formatos (HLS, MP4, DASH), construído sobre `super-media-element`, com auto detecção de formato e suporte a build ESM/CDN.
+Web Component moderno para reprodução de vídeos em múltiplos formatos (HLS, MP4, DASH), construído sobre `custom-media-element`, com auto detecção de formato, suporte a build ESM/CDN e compatibilidade com [media-chrome](https://github.com/muxinc/media-chrome).
 
 ---
 
@@ -129,9 +129,9 @@ que ainda não existe: `request`, `live`, `sdk`, `preferNative`, `retry`,
 Regra de dependência (com guarda automática -
 `tests/core-dependency-guard.test.ts` + `scripts/check-core-isolation.mjs`,
 parte de `pnpm size`): nada sob `src/core-entry.ts` pode importar
-`super-media-element`, `media-tracks` ou a casca, nem usar Custom Elements,
-Shadow DOM, `ResizeObserver`, o construtor de `EventTarget` ou campos
-privados `#`.
+`custom-media-element` (a base da casca), `media-tracks` ou a casca, nem
+usar Custom Elements, Shadow DOM, `ResizeObserver`, o construtor de
+`EventTarget` ou campos privados `#`.
 
 ---
 
@@ -143,6 +143,31 @@ privados `#`.
 | DASH    | `.mpd`   | dash.js          |
 | MP4     | `.mp4`   | video nativo     |
 | YouTube | `youtube.com` | YouTube IFrame API |
+
+---
+
+## 🎛️ Uso com media-chrome
+
+`<ultra-media>` é compatível com [media-chrome](https://github.com/muxinc/media-chrome) plug-and-play — basta usar o atributo `slot="media"` dentro de um `<media-controller>`:
+
+```html
+<script type="module" src="https://cdn.jsdelivr.net/npm/@rodrigofranca/ultra-media/+esm"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
+
+<media-controller>
+  <ultra-media slot="media" src="https://example.com/master.m3u8"></ultra-media>
+  <media-control-bar>
+    <media-play-button></media-play-button>
+    <media-mute-button></media-mute-button>
+    <media-time-range></media-time-range>
+    <media-time-display showduration></media-time-display>
+    <media-rendition-menu-button invoketarget="rendition-menu"></media-rendition-menu-button>
+  </media-control-bar>
+  <media-rendition-menu id="rendition-menu" hidden anchor="auto"></media-rendition-menu>
+</media-controller>
+```
+
+Funciona porque a casca mantém `videoRenditions`/`audioTracks` (via `media-tracks`) sincronizados com o núcleo — os controles de media-chrome leem essas listas diretamente, sem nenhum código extra. Veja `examples/media-chrome-player.html` para um exemplo completo e `core/e2e/tests/media-chrome.spec.ts` para o gate e2e (play/pause/mute/seek/duração/troca de rendition/troca de `src`, tudo através de um `<media-controller>` real).
 
 ---
 
@@ -265,4 +290,4 @@ MIT
 
 ## ✨ Créditos
 
-Inspirado em [super-media-element](https://github.com/luwes/super-media-element).
+Construído sobre [custom-media-element](https://github.com/muxinc/media-elements/tree/main/packages/custom-media-element) (Mux), sucessor mantido do [super-media-element](https://github.com/luwes/super-media-element) original.
