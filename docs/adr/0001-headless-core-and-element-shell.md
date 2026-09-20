@@ -140,8 +140,16 @@ successor `custom-media-element`** instead of writing our own base. With the
 core extracted, the base is no longer in the path of playback logic, so its
 conventions stop hurting:
 
-- its `load()` hook (called by the base on every `src` change) becomes exactly
-  what we need — the shell's `load()` delegates to `core.load()`;
+- ~~its `load()` hook (called by the base on every `src` change) becomes
+  exactly what we need — the shell's `load()` delegates to `core.load()`~~ —
+  **Correção pós-implementação (result-cycle2.md):** `custom-media-element`
+  has no such hook. `src` is in the shell's own `skipAttributes`, so the
+  base's `#forwardAttribute` never touches it; the shell's
+  `attributeChangedCallback` intercepts `src` itself and calls
+  `core.load()`/`core.destroy()` directly from there (see
+  `src/ultra-media-element.ts`). The outcome D3 wanted — one place, driven by
+  `src` changes, owning the core's lifecycle — still holds; only the
+  mechanism differs from what this ADR originally assumed.
 - native-event forwarding is fine for media events; we keep `error` excluded
   and re-dispatch ours;
 - connect/disconnect handling stays in the shell (deferred teardown already
