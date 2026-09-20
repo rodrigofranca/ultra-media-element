@@ -50,7 +50,7 @@ não pertencem a markup).
 | `autoplay`, `controls`, `loop`, `playsinline`, `crossorigin`, `poster`, `preload`, `controlslist`, `disablepictureinpicture`, `disableremoteplayback` | boolean ou string, refletidos genericamente pelo getter/setter que `custom-media-element` instala para cada prop nativa existente | `custom-media-element` | `e2e/tests/public-contract.spec.ts` |
 | `autopictureinpicture` | observado, mas **sem propriedade nativa correspondente** neste Chromium (`'autoPictureInPicture' in document.createElement('video')` é `false`) — `custom-media-element` só instala getter/setter para props que existem de fato no `<video>` real, então este atributo não reflete em nada hoje (ver Descobertas) | `custom-media-element` | `e2e/tests/public-contract.spec.ts` |
 | `muted` | **não** é atributo-refletido pela via genérica (`custom-media-element` remove `muted` do conjunto attr↔prop de propósito, igual à base anterior); a propriedade `muted` é sempre um passthrough direto para `nativeEl.muted`; o atributo `muted` só define o estado inicial em `init()` (paridade com o `<video muted>` nativo do HTML) | `custom-media-element` | `e2e/tests/public-contract.spec.ts` (documenta a quirk) |
-| `live` | observado mas **sem efeito** — ver Descobertas | próprio | `tests/public-contract.test.ts` |
+| `live` | boolean — presente → `options.live = true`; ausente → `'auto'` (ADR-0001 D5, etapa 5). Só lido na criação do core e em `configure({ live })` a cada mudança do atributo — como `request`, só afeta o próximo `load()`, não reconfigura um engine já em execução | próprio | `tests/public-contract.test.ts`, `e2e/tests/public-contract.spec.ts`, `e2e/tests/live.spec.ts` |
 
 ## Membros próprios (`UltraMediaElement`)
 
@@ -60,7 +60,12 @@ não pertencem a markup).
 | `destroy(): void` | método, idempotente | `tests/ultra-media-element-lifecycle.test.ts` |
 | `changeSource(newSrc: string): Promise<void>` | método (seta o atributo `src`) | `tests/public-contract.test.ts` |
 | `getCurrentFormat(): Format \| undefined` | método | `tests/public-contract.test.ts` |
-| `isLive` | propriedade pública, sempre `false` (ver Descobertas) | `tests/public-contract.test.ts` |
+| `isLive` | **ADR-0001 D5 (etapa 5) — mudou de campo público solto para getter**: reflete `core.live.isLive` (`false` sem core/antes de qualquer `load()`) | `tests/public-contract.test.ts`, `e2e/tests/public-contract.spec.ts`, `e2e/tests/live.spec.ts` |
+| `liveInfo` | getter, `LiveInfo \| undefined` (ADR-0001 D5) — reflete `core.live`; `undefined` sem core | `e2e/tests/live.spec.ts` |
+| `goToLive()` | método (ADR-0001 D5) — delega a `core.goToLive()`; no-op silencioso fora de um live/sem core | `e2e/tests/live.spec.ts` |
+| `streamType` | getter, `'live' \| 'on-demand'` (ADR-0001 D5) — compatibilidade media-chrome (`mediaStreamType`, `state-mediator.js`); `'on-demand'` sem core | `e2e/tests/live.spec.ts` |
+| `targetLiveWindow` | getter, `number` (ADR-0001 D5) — compatibilidade media-chrome (`mediaTargetLiveWindow`); `NaN` fora de live, `0` em live sem DVR, janela em segundos com DVR | `e2e/tests/live.spec.ts` |
+| `liveEdgeStart` | getter, `number` (ADR-0001 D5) — compatibilidade media-chrome (`mediaTimeIsLive`, `media-live-button`); `core.live.seekableEnd - 2` em live (a tolerância evita que o próprio `goToLive()` pareça "não ao vivo" logo depois de rodar — ver result.md), `NaN` fora de live | `e2e/tests/live.spec.ts` |
 | `request` | get/set accessor, `RequestPolicy \| undefined` (ADR-0001 D4) — sem atributo HTML; `set` repassa para `core.configure({ request })` (só afeta o próximo `load()`) | `tests/public-contract.test.ts`, `e2e/tests/request-policy.spec.ts`, `e2e/tests/public-contract.spec.ts` |
 | `connectedCallback()` | lifecycle (spec de Custom Elements) | `tests/ultra-media-element-lifecycle.test.ts` |
 | `disconnectedCallback()` | lifecycle, teardown adiado por microtask | `tests/ultra-media-element-lifecycle.test.ts` |
@@ -145,13 +150,10 @@ dele. Travado por `tests/player-factory.test.ts`,
 
 ## Descobertas
 
-- `src/ultra-media-element.ts:38,137` — o atributo `live` está em
-  `observedAttributes` mas `attributeChangedCallback` só reage a `src`
-  (`if (attrName !== 'src') return;`); a propriedade `isLive` (linha 38) é um
-  campo solto, nunca lido nem escrito em resposta ao atributo — hoje é morto.
-  Fora de escopo desta tarefa (nenhuma mudança de comportamento); travado
-  como está por `tests/public-contract.test.ts` para a Fase 2 não
-  "consertar" isso sem querer.
+- **ADR-0001 D5 (etapa 5)** — o atributo `live` deixou de ser morto: agora
+  seeda `options.live` na criação do core e via `configure()` a cada
+  mudança; `isLive` virou getter refletindo `core.live.isLive`. Ver a seção
+  "Live" abaixo e `fronts/live/result.md`.
 - `src/ultra-media-element.ts:118-129` (comentário de `destroy()`) — `load()`
   tinha significado reservado em `super-media-element` (hook por-subclasse
   auto-invocado via `attributeChangedCallback`, com `loadComplete`/
@@ -180,14 +182,65 @@ dele. Travado por `tests/player-factory.test.ts`,
   de mídia real ter chance de disparar; nenhum teste observou perda de
   evento. Ver result.md "Diferenças da base" para o detalhe.
 
+## Live (ADR-0001 D5, etapa 5)
+
+O núcleo headless (`src/core/media-player.ts`, `src/core/ultra-media-core.ts`)
+ganhou:
+
+```ts
+interface LiveInfo {
+  isLive: boolean;
+  seekableStart: number;
+  seekableEnd: number;
+  liveEdge: number;       // === seekableEnd (simplificação documentada, ver result.md)
+  dvr: boolean;           // seekableEnd - seekableStart > 30s (limiar fixo, ver result.md)
+  latency?: number;       // não implementado (custo de tamanho) - hosts podem calcular seekableEnd - currentTime
+  playheadDate: Date | null;
+}
+UltraMediaCoreOptions.live?: boolean | 'auto';  // default 'auto'
+core.live: LiveInfo;                            // snapshot imutável, atualizado com 'livechange'
+core.goToLive(): void;
+eventos: 'livechange' (detail: LiveInfo), 'streamended' (sem detail)
+```
+
+Matriz engine × capacidade (ver `fronts/live/result.md` para a evidência
+completa): hls.js e dash.js implementam isLive/borda inicial/goToLive/dvr/
+playheadDate/streamended via a própria SDK (`LEVEL_LOADED`/`isDynamic()`);
+nativo (mp4/mp3) via `duration === Infinity`; YouTube sempre `isLive: false`
+(fora de escopo). A borda inicial (hls.js `liveSyncPosition`, dash.js seu
+próprio delay de live) é comportamento **default** das duas SDKs — nenhum
+código próprio força isso. **Desvio conhecido**: o fallback HLS nativo sem
+MSE (Safari/TVs antigas) não implementa live (ver `hls-player.ts`'s
+`goToLive()`).
+
+Na casca: `live` (atributo), `isLive`/`liveInfo`/`goToLive()` (mirror do
+core), e `streamType`/`targetLiveWindow`/`liveEdgeStart` (compatibilidade
+`media-chrome` — `media-live-button`/`media-time-range` leem essas três via
+`state-mediator.js`'s `mediaStreamType`/`mediaTargetLiveWindow`/
+`mediaTimeIsLive`, que não são propriedades nativas de `HTMLVideoElement`
+que `custom-media-element` repasse sozinho). `livechange`/`streamended`
+redespachados como `CustomEvent`; a cada `livechange` a casca também dispara
+`streamtypechange`/`targetlivewindowchange` (síntéticos, não nativos — é o
+que fazem `mediaStreamType`/`mediaTargetLiveWindow` reavaliarem).
+
 ## Sumário do inventário
 
-- **94 membros** efetivos (era 93 antes da etapa 4): 15 próprios (10
-  métodos/lifecycle + `isLive` + `request` + 3 estáticos), 79 herdados (6
-  `custom-media-element` diretos + 65 passthrough nativo + 8 `media-tracks`).
+- **99 membros** efetivos (era 94 antes da etapa 5): 20 próprios (10
+  métodos/lifecycle + `isLive` + `request` + `liveInfo` + `goToLive` +
+  `streamType` + `targetLiveWindow` + `liveEdgeStart` + 3 estáticos), 79
+  herdados (6 `custom-media-element` diretos + 65 passthrough nativo + 8
+  `media-tracks`). O teste e2e de inventário (`public-contract.spec.ts`, que
+  só percorre o protótipo de instância, sem estáticos) usa uma contagem
+  paralela: 19 próprios + 79 herdados = 98 (era 92 antes da etapa 5) — ver
+  esse arquivo para a lista exata.
 - **14 atributos observados** (inalterado — `request` não é atributo,
-  ADR-0001 D4), **28 eventos nativos reencaminhados** + 2 eventos próprios
-  (`error`/`warning`) com shape dedicado.
+  ADR-0001 D4; `live` ganhou efeito real na etapa 5 sem virar um novo
+  atributo), **28 eventos nativos reencaminhados** + 2 eventos próprios de
+  erro (`error`/`warning`) + 2 eventos próprios de live (`livechange`/
+  `streamended`, ADR-0001 D5) com shape dedicado.
+- **Etapa 5 (live, ADR-0001 D5):** `isLive` (campo público → getter),
+  `liveInfo`/`goToLive`/`streamType`/`targetLiveWindow`/`liveEdgeStart`
+  (novos) somaram-se aos membros próprios. Ver `fronts/live/result.md`.
 - **Etapa 4 (request policy, ADR-0001 D4):** `request` (get/set) somou-se
   aos membros próprios — 93 → 94. Ver `fronts/request-policy/result.md`.
 - **Etapa 3 (migração `super-media-element` → `custom-media-element`,

@@ -300,6 +300,33 @@ de `type`) já custa ~1.36 kB gzip só por si. Ver
 `fronts/request-policy/result.md` para os números completos e a pergunta
 em aberto.
 
+## Status da etapa 5
+
+Implementada por completo e testada (hls.js/dash.js/nativo, `options.live`,
+`core.live`/`goToLive()`, eventos `livechange`/`streamended`, atributo
+`live`/`isLive`/`liveInfo`/`goToLive()`/`streamType`/`targetLiveWindow`/
+`liveEdgeStart` na casca, gate media-chrome de `media-live-button`), com um
+fixture de live hermético e determinístico (HLS: janela deslizante
+controlada por contagem de recargas; DASH: `SegmentTemplate` de duração fixa
+ancorado ao relógio real - ver `fronts/live/result.md` "fixture live" para
+por que os dois engines usam mecanismos diferentes, incluindo uma limitação
+de dash.js 5.2.1 confirmada empiricamente: não recarregou um MPD dinâmico
+sozinho nesta suíte). **Bloqueada em `pnpm size`, nas quatro contagens que
+importam:**
+
+- `/core` (D1, o que o primeiro host de produção consome): ESM
+  **13.78/13.5 kB** (excede 275 B); UMD 9.69/10 kB (dentro do limite).
+- Casca `<ultra-media>`: ESM **20.74/19 kB** (excede 1.74 kB); UMD
+  **13.53/13.5 kB** (excede 28 B).
+- Ads (não tocado): inalterado.
+
+Mesmo padrão da etapa 4 (`fronts/request-policy/result.md`): a folga
+pré-existente (0.38 kB ESM/0.96 kB UMD na casca; 1.28 kB ESM/1.23 kB UMD no
+`/core`) era menor que o custo mínimo de D5 mesmo depois de cortes reais
+(fallback HLS nativo sem MSE ficou sem live; `latency` não é calculado;
+limiar de `dvr` fixo em vez de por-engine) - ver `fronts/live/result.md`
+para a pergunta exata e as opções levantadas.
+
 ## Open questions
 
 1. Build target for `/core`: which minimum Tizen/webOS years? Until answered,

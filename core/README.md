@@ -112,22 +112,23 @@ core.destroy(); // idempotente; deixa `video` limpo e reutilizável
 ```
 
 API (implementada nesta extração - ver `docs/public-api.md` e o ADR para o
-que ainda não existe: `live`, `sdk`, `preferNative`, `retry`, `textTracks`,
-`goToLive()`, `registerEngine()`):
+que ainda não existe: `sdk`, `preferNative`, `retry`, `textTracks`,
+`registerEngine()`):
 
-- `new UltraMediaCore(media, { container?, request? })`
+- `new UltraMediaCore(media, { container?, request?, live? })`
 - `load(source: string | { src, type? })`, `destroy()` (idempotente)
-- `configure({ request? })` - aplica opções à *próxima* `load()`; uma carga
-  já em andamento continua com a política que estava ativa quando seu
-  `load()` rodou. Ver "Authentication & request policy" abaixo.
+- `configure({ request?, live? })` - aplica opções à *próxima* `load()`; uma
+  carga já em andamento continua com a política que estava ativa quando seu
+  `load()` rodou. Ver "Authentication & request policy" e "Live" abaixo.
 - `media`, `src`, `format`, `engine`, `ready` (`Promise<void>`, uma por `load()`)
 - `renditions`, `rendition` (get/set por id ou `'auto'`)
 - `audioTracks`, `audioTrack` (get/set por id)
+- `live` (`LiveInfo`, snapshot imutável), `goToLive()`. Ver "Live" abaixo.
 - `addEventListener`/`removeEventListener` para `error`, `warning`, `ready`,
   `sourcechange`, `enginechange`, `renditionschange`, `renditionchange`,
-  `audiotrackschange`, `audiotrackchange` - eventos simples `{ type, detail }`,
-  não `Event`/`CustomEvent` reais (o construtor de `EventTarget` falta nas
-  TVs mais antigas visadas).
+  `audiotrackschange`, `audiotrackchange`, `livechange`, `streamended` -
+  eventos simples `{ type, detail }`, não `Event`/`CustomEvent` reais (o
+  construtor de `EventTarget` falta nas TVs mais antigas visadas).
 
 Regra de dependência (com guarda automática -
 `tests/core-dependency-guard.test.ts` + `scripts/check-core-isolation.mjs`,
@@ -275,6 +276,50 @@ quando o tipo aparece, mas isso nunca acontece na prática porque
 ```
 
 Funciona porque a casca mantém `videoRenditions`/`audioTracks` (via `media-tracks`) sincronizados com o núcleo — os controles de media-chrome leem essas listas diretamente, sem nenhum código extra. Veja `examples/media-chrome-player.html` para um exemplo completo e `core/e2e/tests/media-chrome.spec.ts` para o gate e2e (play/pause/mute/seek/duração/troca de rendition/troca de `src`, tudo através de um `<media-controller>` real).
+
+---
+
+## 📡 Live (ADR-0001 D5)
+
+```ts
+const core = new UltraMediaCore(video, { live: 'auto' }); // default; true força, false desliga
+core.load('https://example.com/live.m3u8');
+
+core.addEventListener('livechange', (e) => console.log(e.detail)); // LiveInfo
+core.addEventListener('streamended', () => console.log('transmissão encerrada'));
+
+core.live; // { isLive, seekableStart, seekableEnd, liveEdge, dvr, playheadDate }
+core.goToLive(); // vai para a borda ao vivo; no-op silencioso fora de um live
+```
+
+Na casca, o atributo `live` faz o mesmo (`<ultra-media live src="...">`);
+`isLive`/`liveInfo`/`goToLive()` espelham o núcleo, e `livechange`/
+`streamended` são redespachados como `CustomEvent`. Com media-chrome,
+`<media-live-button>` funciona sem configuração extra (a casca expõe
+`streamType`/`targetLiveWindow`/`liveEdgeStart`, que `state-mediator.js` lê).
+
+- `options.live`: `'auto'` (default) lê do manifesto (hls.js
+  `LEVEL_LOADED.details.live`, dash.js `isDynamic()`); `true` força
+  `isLive: true` sempre reportado (mas a *detecção* de `streamended`
+  continua olhando o sinal real do manifesto - um live forçado ainda
+  reporta o fim de verdade); `false` força `isLive: false` sempre.
+- A borda inicial ("abrir um live começa no vivo, não no início da janela")
+  é comportamento **default** de hls.js/dash.js - nada aqui força isso.
+- `goToLive()`: hls.js usa `liveSyncPosition`; dash.js usa
+  `seekToOriginalLive()`; nativo (mp4/mp3, e HLS nativo sem MSE) usa
+  `seekable.end(last)`.
+- `dvr`: `seekableEnd - seekableStart > 30s` (limiar fixo - o núcleo não tem
+  a duração-alvo por segmento de cada engine para um limiar relativo).
+- `streamended` vs `error`: fica `streamended` quando o manifesto sinaliza o
+  fim de forma explícita (ENDLIST do HLS / MPD `dynamic` → `static` do
+  DASH); um 404 terminal no manifesto continua `error` fatal, mesmo que a
+  causa real tenha sido a transmissão terminando - não há como distinguir
+  as duas coisas de forma confiável só pelo HTTP.
+- Engines sem suporte: YouTube (`isLive` sempre `false` - fora de escopo);
+  fallback HLS nativo sem MSE (Safari/TVs antigas) não implementa live
+  (gap conhecido, ver `fronts/live/result.md`).
+- `latency` (do tipo `LiveInfo`) não é calculado - hosts que precisarem
+  podem fazer `core.live.seekableEnd - core.media.currentTime`.
 
 ---
 
