@@ -7,6 +7,11 @@ const PORT = Number(process.env.E2E_PORT ?? 4173);
 
 export default defineConfig({
   testDir: './tests',
+  // Bundles the media-chrome devDependency into one file before any worker
+  // starts (once, not per worker) - see e2e/scripts/bundle-media-chrome.mjs
+  // and result-cycle2.md's diagnosis of why this needs to happen regardless
+  // of how `playwright test` is invoked.
+  globalSetup: './scripts/bundle-media-chrome.mjs',
   // @network specs hit real internet hosts (YouTube); everything else is hermetic.
   grepInvert: process.env.E2E_NETWORK ? undefined : /@network/,
   grep: process.env.E2E_NETWORK ? /@network/ : undefined,

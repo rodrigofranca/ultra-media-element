@@ -13,13 +13,14 @@ import fixtureManifest from '../fixtures/manifest.json' with { type: 'json' };
 //
 // One test per engine bundles play/mute/seek/duration/swap together
 // (instead of a page load each) - this suite is heavier than the rest
-// (media-chrome's own custom elements, a real <media-controller>, hls.js)
-// and was observed to push the default e2e parallelism (11 workers) into
-// real CPU contention (page-fixture setup itself exceeding the default
-// timeout) - same class of environment sensitivity errors.spec.ts/
-// pending-load-cancel.spec.ts already document for other heavy specs, at a
-// scale that also needed fewer concurrent page loads, not just a longer
-// timeout - see result.md "Descobertas".
+// (media-chrome's own custom elements, a real <media-controller>, hls.js).
+// Correction (result-cycle2.md): the wider timeout below was originally
+// attributed to "CPU contention" from the default e2e parallelism; that
+// diagnosis was wrong - it was the e2e static server's synchronous I/O
+// stalling under this page's (previously ~70-request) load, fixed at the
+// root in static-server.mjs and bundle-media-chrome.mjs. The timeout stays
+// because this test still does more real DOM/network work per case than
+// the rest of the suite, not to mask flakiness.
 const SELECTOR = '#player';
 const MP4_FIXTURE = '/fixtures/mp4/sample.mp4';
 const HLS_FIXTURE = '/fixtures/hls/master.m3u8';

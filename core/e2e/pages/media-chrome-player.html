@@ -3,11 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <title>ultra-media + media-chrome e2e harness</title>
-  <!-- Local devDependency copies only (hermetic.ts blocks anything else) -
-       see e2e/server/static-server.mjs's /media-chrome/ route. -->
+  <!-- Local devDependency copy only (hermetic.ts blocks anything else) -
+       pre-bundled into one file by e2e/scripts/bundle-media-chrome.mjs
+       (see its header comment for why: unbundled, this was ~70 separate
+       module requests per page load) and served from
+       e2e/server/static-server.mjs's /generated/ route. -->
   <script type="module" src="/dist/ultra-media.es.js"></script>
-  <script type="module" src="/media-chrome/index.js"></script>
-  <script type="module" src="/media-chrome/menu/index.js"></script>
+  <script type="module" src="/generated/media-chrome-bundle.js"></script>
 </head>
 <body>
   <media-controller id="controller">
