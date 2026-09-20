@@ -4,8 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Ultra Media Player - Media Chrome Controls</title>
-  <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4/+esm"></script>
-  <script type="module" src="../dist/ultra-media-element.es.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4.19.2/+esm"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/media-chrome@4.19.2/dist/menu/+esm"></script>
+  <script type="module" src="../dist/ultra-media.es.js"></script>
 </head>
 
 <body>
@@ -17,6 +18,8 @@
         slot="media"
       >
       </ultra-media>
+
+      <media-rendition-menu id="rendition-menu" hidden anchor="auto"></media-rendition-menu>
 
       <!-- Top Controls -->
       <media-control-bar class="top-bar">
@@ -42,9 +45,7 @@
         <media-playback-rate-button>
           <media-playback-rate-range></media-playback-rate-range>
         </media-playback-rate-button>
-        <media-quality-button>
-          <media-quality-range></media-quality-range>
-        </media-quality-button>
+        <media-rendition-menu-button invoketarget="rendition-menu"></media-rendition-menu-button>
       </media-control-bar>
     </media-controller>
   </div>

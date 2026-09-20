@@ -1,38 +1,52 @@
-# Public API — `<ultra-media>` (contract snapshot, Fase 1 do ADR-0001)
+# Public API — `<ultra-media>` (contract snapshot)
 
 Inventário da API pública **efetiva** de `<ultra-media>` — própria +
-herdada de `super-media-element@1.4.2` (`SuperVideoElement`) + herdada de
-`media-tracks@0.3.5` (`MediaTracksMixin`) — tal como existe hoje, antes da
-extração de `UltraMediaCore` (ADR-0001). Congela o alvo da Fase 2: nenhum
-destes membros deve mudar de nome, tipo ou comportamento observável.
+herdada da base da casca + herdada de `media-tracks@0.3.5`
+(`MediaTracksMixin`). Escrito originalmente na Fase 1 do ADR-0001 (quando a
+base era `super-media-element@1.4.2`/`SuperVideoElement`), **atualizado na
+etapa 3** (migração para `custom-media-element@1.4.6`/`CustomVideoElement` —
+ver ADR-0001 D3 e `.scratch`/`fronts/shell-migration/result.md` "Diferenças
+da base" e "Mudanças de contrato" para o histórico completo da migração).
+Continua congelando o contrato: nenhum destes membros deve mudar de nome,
+tipo ou comportamento observável sem passar pelo mesmo processo de decisão
+documentado (repor na casca vs. aceitar a mudança).
 
 Método: os membros próprios foram lidos direto de `src/ultra-media-element.ts`.
 Os herdados foram obtidos introspectando a classe real registrada
 (`customElements.get('ultra-media')`) em um Chromium real, depois de
 `pnpm build`, contra o bundle publicado (`dist/ultra-media.es.js`) — não
-contra os `.d.ts` ou a leitura do pacote `super-media-element`/`media-tracks`,
+contra os `.d.ts` ou a leitura do pacote `custom-media-element`/`media-tracks`,
 para capturar exatamente o que o mixin instala em runtime (inclui passthrough
 de propriedades nativas do `<video>`, adicionado dinamicamente por
-`super-media-element`'s `#define()`). Total: **93 membros** (14 próprios,
-79 herdados: 6 de `super-media-element` + 65 passthrough de
-`HTMLVideoElement`/`HTMLMediaElement` + 8 de `media-tracks`).
+`custom-media-element`'s `#define()`). Total: **93 membros** (14 próprios,
+79 herdados: 6 de `custom-media-element` + 65 passthrough de
+`HTMLVideoElement`/`HTMLMediaElement` + 8 de `media-tracks`) — a composição
+dos 6 diretos mudou (`loadComplete`/`isLoaded` saíram, `init`/`handleEvent`
+entraram) mas a contagem total ficou igual; ver "Mudanças de contrato" no
+result.md da migração. Duas novas estáticas (`getTemplateHTML`,
+`shadowRootOptions`) também chegaram com a nova base — ver a tabela
+"Estáticos" abaixo — mas não somam ao inventário original de 93, que só
+contabilizava estáticas específicas (`Events`/`observedAttributes`/
+`skipAttributes`) e membros de instância/protótipo.
 
 ## Estáticos
 
 | Membro | Valor / tipo | Origem | Coberto por |
 |---|---|---|---|
-| `static Events` | `string[]`, 28 entradas — todos os eventos de `super-media-element.Events` exceto `'error'` (ver Descobertas) | próprio (filtra a lista herdada) | `tests/public-contract.test.ts` (regra do filtro) + `e2e/tests/public-contract.spec.ts` (lista real completa) |
-| `static observedAttributes` | `string[]`, 14 entradas — os 13 de `super-media-element` + `'live'` | próprio (estende a lista herdada) | idem |
-| `static skipAttributes` | `['src']` | próprio | `tests/public-contract.test.ts` |
+| `static Events` | `string[]`, 28 entradas — todos os eventos de `custom-media-element.Events` exceto `'error'` (ver Descobertas) | próprio (filtra a lista herdada) | `tests/public-contract.test.ts` (regra do filtro) + `e2e/tests/public-contract.spec.ts` (lista real completa) |
+| `static observedAttributes` | `string[]`, 14 entradas — os 13 de `custom-media-element` + `'live'` | próprio (estende a lista herdada) | idem |
+| `static skipAttributes` | `['src']` | próprio — a base não lê mais esse membro (ver "Comportamento de `src`" abaixo); a própria `attributeChangedCallback` da casca agora consulta o valor para decidir o que pular | `tests/public-contract.test.ts` |
+| `static getTemplateHTML` | função (gera o HTML inicial do shadow root) | `custom-media-element` (novo — não existia em `super-media-element`, que usava um `template` compartilhado por todas as instâncias) | `e2e/tests/public-contract.spec.ts` |
+| `static shadowRootOptions` | `{ mode: 'open' }` | `custom-media-element` (novo) | `e2e/tests/public-contract.spec.ts` |
 
 ## Atributos observados ↔ propriedades
 
 | Atributo | Tipo refletido | Origem | Notas |
 |---|---|---|---|
-| `src` | string, mas em `skipAttributes` — a reflexão attr→nativeEl é pulada; a troca de player acontece via `attributeChangedCallback` próprio | próprio + `super-media-element` | `applySrcChange` decide troca de engine vs `player.load()` |
-| `autoplay`, `controls`, `loop`, `playsinline`, `crossorigin`, `poster`, `preload`, `controlslist`, `disablepictureinpicture`, `disableremoteplayback` | boolean ou string, refletidos genericamente pelo getter/setter que `super-media-element` instala para cada prop nativa existente | `super-media-element` | `e2e/tests/public-contract.spec.ts` |
-| `autopictureinpicture` | observado, mas **sem propriedade nativa correspondente** neste Chromium (`'autoPictureInPicture' in document.createElement('video')` é `false`) — `super-media-element` só instala getter/setter para props que existem de fato no `<video>` real, então este atributo não reflete em nada hoje (ver Descobertas) | `super-media-element` | `e2e/tests/public-contract.spec.ts` |
-| `muted` | **não** é atributo-refletido pela via genérica (`super-media-element` remove `muted` do conjunto attr↔prop de propósito); a propriedade `muted` é sempre um passthrough direto para `nativeEl.muted`; o atributo `muted` só define o estado inicial em `#initNativeEl()` (paridade com o `<video muted>` nativo do HTML) | `super-media-element` | `e2e/tests/public-contract.spec.ts` (documenta a quirk) |
+| `src` | string, mas em `skipAttributes` — a reflexão attr→nativeEl é pulada (agora enforçada pela própria casca, não pela base — ver "Comportamento de `src`"); a troca de player acontece via `attributeChangedCallback` próprio | próprio + `custom-media-element` | `applySrcChange` decide troca de engine vs `player.load()` |
+| `autoplay`, `controls`, `loop`, `playsinline`, `crossorigin`, `poster`, `preload`, `controlslist`, `disablepictureinpicture`, `disableremoteplayback` | boolean ou string, refletidos genericamente pelo getter/setter que `custom-media-element` instala para cada prop nativa existente | `custom-media-element` | `e2e/tests/public-contract.spec.ts` |
+| `autopictureinpicture` | observado, mas **sem propriedade nativa correspondente** neste Chromium (`'autoPictureInPicture' in document.createElement('video')` é `false`) — `custom-media-element` só instala getter/setter para props que existem de fato no `<video>` real, então este atributo não reflete em nada hoje (ver Descobertas) | `custom-media-element` | `e2e/tests/public-contract.spec.ts` |
+| `muted` | **não** é atributo-refletido pela via genérica (`custom-media-element` remove `muted` do conjunto attr↔prop de propósito, igual à base anterior); a propriedade `muted` é sempre um passthrough direto para `nativeEl.muted`; o atributo `muted` só define o estado inicial em `init()` (paridade com o `<video muted>` nativo do HTML) | `custom-media-element` | `e2e/tests/public-contract.spec.ts` (documenta a quirk) |
 | `live` | observado mas **sem efeito** — ver Descobertas | próprio | `tests/public-contract.test.ts` |
 
 ## Membros próprios (`UltraMediaElement`)
@@ -49,7 +63,13 @@ de propriedades nativas do `<video>`, adicionado dinamicamente por
 | `attributeChangedCallback()` | lifecycle | `tests/ultra-media-element-lifecycle.test.ts` |
 | `setupTrackListeners`, `applySrcChange`, `initializePlayer`, `removeAllMediaTracks` | detalhes internos (`private` em TS, mas visíveis em runtime — não fazem parte do contrato público) | não travados individualmente; comportamento observável coberto pelos testes acima |
 
-## Herdados de `super-media-element` (além do passthrough nativo)
+## Herdados de `custom-media-element` (além do passthrough nativo)
+
+`loadComplete`/`isLoaded` (a convenção `load()`-como-hook de
+`super-media-element`) **saíram** nesta base; `init()`/`handleEvent()`
+**entraram** em seu lugar — ver "Mudanças de contrato" no result.md da
+migração para a decisão (aceitos como removidos: eram membros mortos na
+prática, ver Descobertas).
 
 | Membro | Tipo | Coberto por |
 |---|---|---|
@@ -57,16 +77,18 @@ de propriedades nativas do `<video>`, adicionado dinamicamente por
 | `src` | getter/setter, refletido no atributo `src` | `tests/public-contract.test.ts` + e2e |
 | `preload` | getter/setter | `e2e/tests/public-contract.spec.ts` |
 | `defaultMuted` | getter/setter, refletido no atributo `muted` | `e2e/tests/public-contract.spec.ts` |
-| `loadComplete` | getter/setter, `Promise \| undefined` — só vira uma Promise real se a subclasse sobrescrever `load()`. `UltraMediaElement` **não** sobrescreve `load()`, logo `loadComplete` fica sempre `undefined` na prática | `tests/public-contract.test.ts` (documenta a quirk) |
-| `isLoaded` | getter, `boolean`, companion de `loadComplete` | idem |
+| `init()` | método público, inicialização preguiçosa (shadow root + `nativeEl` + listeners) — chamado internamente pelo próprio `custom-media-element` na primeira leitura de qualquer propriedade/atributo; não é chamado pela casca diretamente | `e2e/tests/public-contract.spec.ts` |
+| `handleEvent(event)` | método público, `EventListener` interface — recebe os eventos nativos de mídia encaminhados do shadow root e os redespacha como `CustomEvent` no elemento | `e2e/tests/public-contract.spec.ts` |
 
-## Herdados de `super-media-element` — passthrough nativo (`HTMLVideoElement`/`HTMLMediaElement`)
+## Herdados de `custom-media-element` — passthrough nativo (`HTMLVideoElement`/`HTMLMediaElement`)
 
 65 membros, instalados dinamicamente pelo mixin a partir do protótipo nativo de
 `<video>` (getter/setter genérico para propriedades, função-proxy para
-métodos — ambos delegam a `this.nativeEl`). Os citados explicitamente no
-brief têm teste dedicado; os demais são travados em bloco pela mesma spec
-(lista exata comparada por igualdade).
+métodos — ambos delegam a `this.nativeEl`). Idêntico ao que `super-media-
+element` instalava (mesmo algoritmo de introspecção do protótipo nativo) —
+nenhum membro desta lista mudou de nome, tipo ou comportamento na migração.
+Os citados explicitamente no brief têm teste dedicado; os demais são
+travados em bloco pela mesma spec (lista exata comparada por igualdade).
 
 | Membro | Coberto por |
 |---|---|
@@ -88,8 +110,8 @@ brief têm teste dedicado; os demais são travados em bloco pela mesma spec
 
 - `static Events` (28, ver acima) — todo evento nativo de mídia exceto
   `error` é reencaminhado de `nativeEl` como `CustomEvent` com
-  `detail: undefined` (mecanismo do `super-media-element`, shadow-root
-  capturing listener).
+  `detail: undefined` (mecanismo do `custom-media-element`, shadow-root
+  capturing listener + `handleEvent()`).
 - `error` / `warning` — **não** vêm de `Events`; são emitidos só por
   `initializePlayer()`'s `player.onError()`, roteados por `fatal` (`detail`
   no shape de `MediaPlayerError`, `src/core/media-player.ts`). Cobertos por
@@ -113,8 +135,8 @@ dele. Travado por `tests/player-factory.test.ts`,
 
 ## Comportamento de `src`
 
-- Atributo `src` está em `skipAttributes`: `super-media-element` nunca copia o atributo `src` para `nativeEl` diretamente (o player é quem decide, via `Hls.loadSource` / `dash.attachSource` / `nativeEl.src =`).
-- `src` (propriedade) é a getter/setter própria de `super-media-element` — sempre refletida no atributo (`get/set src` no `SuperMedia` — não usa o passthrough genérico).
+- Atributo `src` está em `skipAttributes`: o player é quem decide o `nativeEl.src` real, via `Hls.loadSource` / `dash.attachSource` / `nativeEl.src =` — nunca a reflexão genérica de atributo. **Diferença da base (etapa 3):** `super-media-element` cuidava disso sozinho (o atributo nunca era copiado para `nativeEl`); `custom-media-element` **não** tem esse conceito — ele forçaria `nativeEl.setAttribute('src', <url bruta>)` a cada troca (a mesma URL de manifesto HLS/DASH que o player real nunca deveria ver). A própria `attributeChangedCallback` da casca agora intercepta isso: para atributos em `skipAttributes`, ela força a inicialização preguiçosa (lendo `nativeEl`) sem chamar `super.attributeChangedCallback()`, pulando o passo de encaminhamento da base inteiramente.
+- `src` (propriedade) é a getter/setter própria da base — sempre refletida no atributo (`get/set src` — não usa o passthrough genérico).
 - `changeSource(newSrc)` é só um atalho para `setAttribute('src', newSrc)`, com um `console.warn` se `newSrc` for falsy.
 
 ## Descobertas
@@ -127,28 +149,45 @@ dele. Travado por `tests/player-factory.test.ts`,
   como está por `tests/public-contract.test.ts` para a Fase 2 não
   "consertar" isso sem querer.
 - `src/ultra-media-element.ts:118-129` (comentário de `destroy()`) — `load()`
-  tem significado reservado em `super-media-element` (hook por-subclasse
-  auto-invocado via `attributeChangedCallback`); como `UltraMediaElement`
-  nunca sobrescreve `load()`, `loadComplete`/`isLoaded` nunca viram uma
-  Promise real na prática — confirmado empiricamente (ver tabela acima).
+  tinha significado reservado em `super-media-element` (hook por-subclasse
+  auto-invocado via `attributeChangedCallback`, com `loadComplete`/
+  `isLoaded` como promessa em torno dele); como `UltraMediaElement` nunca
+  sobrescrevia `load()`, esses dois membros nunca viravam uma Promise real
+  na prática — confirmado empiricamente antes da migração. **Etapa 3:**
+  `custom-media-element` remove essa convenção inteira (não tem hook
+  `load()`, não tem `loadComplete`/`isLoaded`) — como já eram mortos, a
+  remoção não muda nenhum comportamento observável real; ver "Mudanças de
+  contrato" no result.md da migração para a decisão formal.
 - `muted` (propriedade) não é atributo-refletida como as demais booleanas
-  (`super-media-element` remove `muted` do conjunto genérico de propósito) —
-  fácil de confundir com `autoplay`/`controls`/etc. na Fase 2.
+  (a base remove `muted` do conjunto genérico de propósito, em ambas as
+  versões da base) — fácil de confundir com `autoplay`/`controls`/etc.
 - `autopictureinpicture` está em `observedAttributes` (herdado da lista
-  estática de `super-media-element`) mas não existe `autoPictureInPicture`
-  como propriedade real em `HTMLVideoElement` neste Chromium — o loop de
-  `nativeElProps` de `super-media-element` só instala getter/setter para
-  propriedades que o `<video>` de teste realmente tem, então esse atributo
-  não reflete em nenhuma propriedade hoje (`el.autoPictureInPicture` é
-  sempre `undefined`). Confirmado em `e2e/tests/public-contract.spec.ts`.
+  estática da base) mas não existe `autoPictureInPicture` como propriedade
+  real em `HTMLVideoElement` neste Chromium — o loop de `nativeElProps` da
+  base só instala getter/setter para propriedades que o `<video>` de teste
+  realmente tem, então esse atributo não reflete em nenhuma propriedade
+  hoje (`el.autoPictureInPicture` é sempre `undefined`). Confirmado em
+  `e2e/tests/public-contract.spec.ts`; inalterado pela etapa 3.
+- **Etapa 3** — `custom-media-element`'s `disconnectedCallback()` (ausente
+  em `super-media-element`, que era um no-op) agora desfaz de verdade seus
+  próprios listeners/observers a cada desconexão, mesmo numa
+  desconexão+reconexão síncrona (elemento movido no DOM) — reconectado, o
+  próprio `connectedCallback()` da base os recria antes do próximo evento
+  de mídia real ter chance de disparar; nenhum teste observou perda de
+  evento. Ver result.md "Diferenças da base" para o detalhe.
 
 ## Sumário do inventário
 
 - **93 membros** efetivos: 14 próprios (10 métodos/lifecycle + `isLive` +
-  3 estáticos), 79 herdados (6 `super-media-element` diretos + 65 passthrough
-  nativo + 8 `media-tracks`).
+  3 estáticos), 79 herdados (6 `custom-media-element` diretos + 65
+  passthrough nativo + 8 `media-tracks`).
 - **14 atributos observados**, **28 eventos nativos reencaminhados** + 2
   eventos próprios (`error`/`warning`) com shape dedicado.
-- Nenhum membro novo foi encontrado além do que `AGENTS.md`/o ADR já
-  descrevem; as duas surpresas são as listadas em Descobertas (atributo
-  `live` morto, e a quirk de `muted`).
+- **Etapa 3 (migração `super-media-element` → `custom-media-element`,
+  ADR-0001 D3):** contagem total inalterada (93), mas 2 dos 6 membros
+  diretos da base mudaram (`loadComplete`/`isLoaded` → `init`/
+  `handleEvent` — aceito como remoção, eram mortos) e 2 estáticas novas
+  chegaram (`getTemplateHTML`, `shadowRootOptions`, fora da contagem
+  original de 93). Nenhum outro membro mudou de nome, tipo ou comportamento
+  observável. Ver `fronts/shell-migration/result.md` para a tabela completa
+  "Mudanças de contrato" e "Diferenças da base".

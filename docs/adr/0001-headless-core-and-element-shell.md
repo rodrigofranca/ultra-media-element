@@ -247,6 +247,16 @@ size) plus a blind review, max three fix cycles.
 6. **`alternatives` failover + retry policy.**
 7. Host adapter behind a feature flag (host repository, out of this package).
 
+## Status da etapa 3
+
+Concluída. `<ultra-media>` migrou de `super-media-element@1.4.2` para
+`custom-media-element@1.4.6`; `media-chrome@4.19.2` (`^4`) foi adicionado
+como devDependency e o gate e2e `core/e2e/tests/media-chrome.spec.ts` cobre
+play/pause/mute/seek/duration/troca de rendition/troca de src através de um
+`<media-controller>` real, servido localmente (hermético). Ver
+`fronts/shell-migration/result.md` para o inventário completo de diferenças
+de base, mudanças de contrato e tamanhos antes/depois.
+
 ## Open questions
 
 1. Build target for `/core`: which minimum Tizen/webOS years? Until answered,

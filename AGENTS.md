@@ -30,17 +30,22 @@ never the other way around.
   `tests/core-dependency-guard.test.ts` (source-level import-graph walk) and
   `scripts/check-core-isolation.mjs` (built-bundle content check, run by
   `pnpm size`):** nothing this entry's import graph pulls in may import
-  `super-media-element`, `media-tracks`, or `src/ultra-media-element.ts`/
-  `src/ultra-media-ad.ts`, or use `customElements`, `attachShadow`,
+  `custom-media-element` (the shell's base class, ADR-0001 D3),
+  `media-tracks`, or `src/ultra-media-element.ts`/`src/ultra-media-ad.ts`,
+  or use `customElements`, `attachShadow`,
   `ResizeObserver`, `new EventTarget()`, or `#` private class fields — the
   Smart TV runtimes this targets may lack all of those (ADR-0001, open
   question 1). Don't weaken either guard to make a change pass.
 - `src/ultra-media-element.ts` — the `<ultra-media>` shell: owns the
-  `<video>` (via `super-media-element`), instantiates one `UltraMediaCore`
-  on it, reflects `src`, mirrors the core's `renditions`/`audioTracks` onto
-  the `media-tracks` lists media-chrome reads, and re-dispatches the core's
-  `error`/`warning` events as `CustomEvent`s. Derives all state from the
-  core's events/properties, never from the SDKs directly.
+  `<video>` (via `custom-media-element`, Mux's maintained successor to the
+  frozen `super-media-element` - ADR-0001 D3), instantiates one
+  `UltraMediaCore` on it, reflects `src`, mirrors the core's
+  `renditions`/`audioTracks` onto the `media-tracks` lists media-chrome
+  reads, and re-dispatches the core's `error`/`warning` events as
+  `CustomEvent`s. **Golden rule: the shell derives all state from the
+  core's events/properties, never from the SDKs or `nativeEl` internals
+  directly** - if you need a new piece of playback state in the shell, add
+  it to the core first.
 - `src/core/ultra-media-core.ts` — `UltraMediaCore`: format detection,
   engine selection (via `player-factory.ts`), source-swap teardown, the
   generation-based `ready`-promise/cancellation bookkeeping, and the single
