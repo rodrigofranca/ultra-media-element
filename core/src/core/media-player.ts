@@ -1,3 +1,6 @@
+import type { RequestPolicy } from './request-policy';
+export type { RequestContext, RequestPolicy } from './request-policy';
+
 export interface MediaTrack {
   id: string;
   kind?: string;
@@ -41,7 +44,7 @@ export interface MediaPlayerError {
 
 export interface IMediaPlayer {
   onReady: Promise<void>;
-  load(src: string): void;
+  load(src: string, requestPolicy?: RequestPolicy): void;
   destroy(): void;
   onTracksChange?(callback: (tracks: MediaTracks) => void): void;
   onError?(callback: (error: MediaPlayerError) => void): void;
