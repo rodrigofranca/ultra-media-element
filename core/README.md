@@ -112,11 +112,14 @@ core.destroy(); // idempotente; deixa `video` limpo e reutilizável
 ```
 
 API (implementada nesta extração - ver `docs/public-api.md` e o ADR para o
-que ainda não existe: `request`, `live`, `sdk`, `preferNative`, `retry`,
-`configure()`, `textTracks`, `goToLive()`, `registerEngine()`):
+que ainda não existe: `live`, `sdk`, `preferNative`, `retry`, `textTracks`,
+`goToLive()`, `registerEngine()`):
 
-- `new UltraMediaCore(media, { container? })`
+- `new UltraMediaCore(media, { container?, request? })`
 - `load(source: string | { src, type? })`, `destroy()` (idempotente)
+- `configure({ request? })` - aplica opções à *próxima* `load()`; uma carga
+  já em andamento continua com a política que estava ativa quando seu
+  `load()` rodou. Ver "Authentication & request policy" abaixo.
 - `media`, `src`, `format`, `engine`, `ready` (`Promise<void>`, uma por `load()`)
 - `renditions`, `rendition` (get/set por id ou `'auto'`)
 - `audioTracks`, `audioTrack` (get/set por id)
@@ -143,6 +146,110 @@ usar Custom Elements, Shadow DOM, `ResizeObserver`, o construtor de
 | DASH    | `.mpd`   | dash.js          |
 | MP4     | `.mp4`   | video nativo     |
 | YouTube | `youtube.com` | YouTube IFrame API |
+
+---
+
+## 🔐 Authentication & request policy
+
+ADR-0001 D4. Cobre o caso "Bearer token quando há sessão, senão cookies" e o
+backlog de assinatura de URL/troca de CDN. Aplicado por engine, onde
+tecnicamente possível - ver a matriz abaixo.
+
+```ts
+interface RequestContext {
+  url: string;
+  type: 'manifest' | 'segment' | 'key' | 'license' | 'other';
+  engine: string; // 'hls.js' | 'dash.js' | 'video/mp4' | 'audio/mp3' | 'youtube'
+}
+
+interface RequestPolicy {
+  headers?: Record<string, string> | ((ctx: RequestContext) => Record<string, string> | void);
+  credentials?: 'omit' | 'same-origin' | 'include';
+  transformUrl?: (ctx: RequestContext) => string | void;
+}
+```
+
+```ts
+// Núcleo headless
+const core = new UltraMediaCore(video, {
+  request: {
+    headers: (ctx) => (hasToken() ? { Authorization: `Bearer ${getToken()}` } : undefined),
+    credentials: hasToken() ? 'omit' : 'include', // sem token -> cookies
+  },
+});
+core.load('https://example.com/master.m3u8');
+
+// Trocar a política (ex.: token renovado) - só vale a partir do PRÓXIMO load()
+core.configure({ request: { headers: { Authorization: `Bearer ${newToken}` } } });
+core.load('https://example.com/master.m3u8'); // agora sim usa o novo header
+```
+
+Na casca `<ultra-media>`, a mesma opção é uma **propriedade** (nunca um
+atributo HTML - headers com token não pertencem a markup):
+
+```ts
+document.querySelector('ultra-media').request = {
+  headers: { Authorization: 'Bearer ...' },
+};
+```
+
+Semântica: `transformUrl` roda primeiro (a URL final é a que `headers(ctx)`
+recebe); `headers` como função é chamada por requisição, permitindo token
+rotativo. Um `headers`/`transformUrl` do host que lança uma exceção nunca
+derruba a requisição, mas **a política inteira é descartada só para aquela
+requisição** (revisão do ciclo 2, defeito 4): ela sai com a URL original, sem
+headers e sem `credentials` - nunca um estado misto (ex.: URL já assinada mas
+sem o header que autenticaria essa assinatura). Um `warning`
+(`code: 'REQUEST_POLICY_ERROR'`) é emitido; a próxima requisição (retry,
+próximo segmento) tenta a política de novo, do zero.
+
+`crossOrigin` (nativo/HLS sem MSE) é restaurado no `destroy()` do player que o
+aplicou, ao valor de antes (ausente, se o atributo não existia) - ciclo 2,
+defeito 2. Um host que mudou `crossOrigin` manualmente depois da nossa
+escrita não é sobrescrito de volta (mesmo critério do `style.display` que o
+engine YouTube restaura).
+
+Matriz engine × capacidade:
+
+| Engine | `headers` | `credentials` | `transformUrl` | `RequestContext.type` |
+| --- | --- | --- | --- | --- |
+| hls.js | ✅ via `xhrSetup`/`fetchSetup` (cobre os dois loaders) | ✅ (`include` → `xhr.withCredentials`/`fetch` `credentials`) | ✅ - idempotente mesmo nos retries internos do hls.js (ciclo 2, defeito 1) | `manifest`/`level`/`audioTrack`/`subtitleTrack`/`steering-manifest` → `manifest`; `media-fragment` → `segment`; `key` → `key`; resto → `other` |
+| dash.js | ✅ via `addRequestInterceptor` | ✅ (mesmos valores de `RequestCredentials`, setados direto na `CommonMediaRequest`) | ✅ - já era idempotente nos retries (dash.js reconstrói a requisição do zero a cada tentativa) | `MPD` → `manifest`; `*Segment` → `segment`; `license`/`licenseCertificate` → reservado, não aplicado (ver nota DRM abaixo); resto → `other` |
+| Nativo (MP4/MP3, HLS sem MSE) | ❌ impossível - `warning` (`REQUEST_HEADERS_UNSUPPORTED`) emitido uma vez por carga, playback continua | ✅ via `crossOrigin` (`include` → `'use-credentials'`; `omit`/`same-origin` → `'anonymous'`) | ✅ na URL de nível superior (`manifest` para HLS nativo, `other` para MP4/MP3) | fixo (só a URL de nível superior existe) |
+| YouTube | ❌ impossível - mesmo `warning` | ⚠️ ignorado (documentado aqui, sem `warning` - não há requisição de mídia nossa para aplicar) | ⚠️ ignorado, mesma razão | `other` |
+
+**Semântica exata de `credentials` por engine (ciclo 2, defeito 5)** - os
+três valores (`'omit'`, `'same-origin'`, `'include'`) só são realmente
+distintos onde a Fetch API decide as credenciais; onde a decisão passa por
+`XMLHttpRequest.withCredentials` (um booleano) ou pelo atributo `crossOrigin`
+do `<video>`/`<audio>` (que só distingue CORS-sem-credenciais de
+CORS-com-credenciais), **`'omit'` e `'same-origin'` produzem exatamente o
+mesmo comportamento observável**, porque nenhuma das duas Web Platform APIs
+tem um modo "nunca envie cookies, nem same-origin":
+
+| Engine | Caminho real | `'omit'`/`'same-origin'` | `'include'` |
+| --- | --- | --- | --- |
+| hls.js (`xhrSetup`, o loader padrão) | `xhr.withCredentials` | idênticos - `withCredentials: false` | `withCredentials: true` |
+| hls.js (`fetchSetup`, só se o host configurar `config.loader`/FetchLoader) | `fetch()`'s `credentials` | **distintos** - `'omit'` nunca envia cookies, nem same-origin | `'include'` |
+| dash.js (loader padrão, XHR - `_getLoader` só escolhe fetch para segmentos de baixa latência que este pacote não usa) | `xhr.withCredentials` | idênticos, mesma razão do hls.js | `withCredentials: true` |
+| Nativo (MP4/MP3, HLS sem MSE) | `crossOrigin` | idênticos - ambos viram `'anonymous'` | `'use-credentials'` |
+
+Ou seja: na prática, com os loaders padrão de cada engine, `'omit'` só é
+realmente "omitir" se o host trocar hls.js para seu `FetchLoader` via
+`config.loader` - fora isso, é indistinguível de `'same-origin'` em todo
+lugar. O tipo (`RequestPolicy.credentials`) documenta isso via JSDoc.
+
+**DRM/licenças (ciclo 2, defeito 6, registrado - não implementado):** hls.js
+aplica requisições de licença por um hook separado
+(`config.licenseXhrSetup`) e dash.js por outro (`registerLicenseRequestFilter`/
+`licenseRequestFilters`, consumido em `_doLicenseRequest`) - nenhum dos dois
+passa pelos hooks (`xhrSetup`/`fetchSetup`/`addRequestInterceptor`) que
+`options.request` usa hoje. `RequestContext.type` já reserva `'license'`
+para quando essa etapa (DRM, P2) for implementada, mas **nenhuma licença
+recebe `headers`/`credentials`/`transformUrl` atualmente** - `dash.js`'s
+`classifyDashRequestType` até classifica `'license'`/`'licenseCertificate'`
+quando o tipo aparece, mas isso nunca acontece na prática porque
+`addRequestInterceptor` nunca é chamado para uma requisição de licença.
 
 ---
 

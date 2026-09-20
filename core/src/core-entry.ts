@@ -16,3 +16,4 @@ export type {
 // consumers pass `{ src, type: Format.HLS }` to `UltraMediaCore.load()`.
 export { Format } from './core/format';
 export type { MediaPlayerError, MediaErrorCategory, VideoRendition, MediaTrack } from './core/media-player';
+export type { RequestContext, RequestPolicy } from './core/request-policy';

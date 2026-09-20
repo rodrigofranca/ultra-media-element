@@ -115,6 +115,10 @@ const EXPECTED_MEMBER_KINDS: Record<string, string> = {
   setupTrackListeners: 'method', connectedCallback: 'method', disconnectedCallback: 'method', destroy: 'method',
   attributeChangedCallback: 'method', applySrcChange: 'method', createCore: 'method', forwardCoreEvent: 'method',
   syncMediaTracks: 'method', removeAllMediaTracks: 'method', changeSource: 'method', getCurrentFormat: 'method',
+  // ADR-0001 D4 - request policy (auth headers/credentials/signed URLs); no
+  // HTML attribute (headers with tokens don't belong in markup), so this
+  // get/set property is the only new own member the step 4 brief adds.
+  request: 'accessor',
   // custom-media-element's own surface (loadComplete/isLoaded were
   // super-media-element's - custom-media-element drops that convention
   // entirely and replaces them with init/handleEvent, see "Diferenças da
@@ -166,7 +170,9 @@ test.describe('public contract: full prototype member inventory', () => {
   // specific private method names), so this list is updated accordingly -
   // everything else (own public surface + all 79 inherited members) is
   // unchanged, which is exactly what the rest of this file's tests confirm.
-  test('exactly the 91 documented members exist (12 own + 79 inherited), each with the right descriptor kind', async ({ page }) => {
+  // ADR-0001 D4 (step 4): `request` is a new own accessor - 13 own + 79
+  // inherited = 92 (was 91: 12 own + 79 inherited, see docs/public-api.md).
+  test('exactly the 92 documented members exist (13 own + 79 inherited), each with the right descriptor kind', async ({ page }) => {
     await gotoPlayer(page);
     const kinds = await collectMemberKinds(page);
     expect(kinds).toEqual(EXPECTED_MEMBER_KINDS);

@@ -293,7 +293,7 @@ describe('UltraMediaElement src change during a synchronous DOM move (cycle 3, d
 
     // Same engine (mp4 -> mp4): reused via load(), no second player.
     expect(created).toHaveLength(1);
-    expect(firstPlayer.load).toHaveBeenCalledWith('https://example.com/b.mp4');
+    expect(firstPlayer.load).toHaveBeenCalledWith('https://example.com/b.mp4', undefined);
     expect(firstPlayer.destroy).not.toHaveBeenCalled();
 
     await Promise.resolve();

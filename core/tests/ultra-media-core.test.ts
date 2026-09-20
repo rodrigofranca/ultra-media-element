@@ -108,7 +108,9 @@ describe('UltraMediaCore: load()/destroy() lifecycle', () => {
     core.load('b.mp4');
 
     expect(PlayerFactory.create).toHaveBeenCalledTimes(1);
-    expect(player.load).toHaveBeenCalledWith('b.mp4');
+    // Second arg is the active request policy (ADR-0001 D4) - undefined
+    // here since none was configured.
+    expect(player.load).toHaveBeenCalledWith('b.mp4', undefined);
   });
 
   it('tears down the old player and creates a new one on a format change', () => {
@@ -555,5 +557,65 @@ describe('UltraMediaCore: leaves the <video> as it found it, except src (cycle 2
     first.destroy();
 
     expect(() => new UltraMediaCore(el)).not.toThrow();
+  });
+});
+
+// ADR-0001 D4 - configure() merges into options and only takes effect
+// starting with the next load(): an in-progress/already-created player keeps
+// whatever policy was active when its own load() call ran.
+describe('UltraMediaCore: configure() (ADR-0001 D4)', () => {
+  it('a request policy set at construction is passed to PlayerFactory.create() and to load()', () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const policy = { credentials: 'include' as const };
+    const core = new UltraMediaCore(video(), { request: policy });
+
+    core.load('a.mp4');
+
+    expect(PlayerFactory.create).toHaveBeenCalledWith(expect.objectContaining({ requestPolicy: policy }));
+  });
+
+  it('configure() does not affect a player already created by an earlier load() until the next load()', () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(video());
+
+    core.load('a.mp4');
+    core.configure({ request: { credentials: 'include' } });
+
+    // No new load() happened yet - the already-active player's load() was
+    // never called again with the new policy.
+    expect(player.load).toHaveBeenCalledTimes(0);
+  });
+
+  it('configure() changes the policy used starting with the very next load() (same engine, reused player)', () => {
+    const player = fakePlayer();
+    mockFactoryReturning(player);
+    const core = new UltraMediaCore(video());
+    const policy = { credentials: 'include' as const };
+
+    core.load('a.mp4');
+    core.configure({ request: policy });
+    core.load('b.mp4');
+
+    // The mocked PlayerFactory.create() (unlike the real one) doesn't call
+    // player.load() itself, so the first load() leaves no call here - only
+    // the reuse-branch call from the second load() does.
+    expect(player.load).toHaveBeenCalledTimes(1);
+    expect(player.load).toHaveBeenCalledWith('b.mp4', policy);
+  });
+
+  it('configure() changes the policy used by a brand new player on a format change', () => {
+    const first = fakePlayer();
+    const second = fakePlayer();
+    mockFactoryReturning(first, second);
+    const core = new UltraMediaCore(video());
+    const policy = { credentials: 'include' as const };
+
+    core.load('a.mp4');
+    core.configure({ request: policy });
+    core.load('b.m3u8');
+
+    expect(PlayerFactory.create).toHaveBeenLastCalledWith(expect.objectContaining({ requestPolicy: policy }));
   });
 });

@@ -1,9 +1,25 @@
 import type { IMediaPlayer, MediaTracks, MediaPlayerError, MediaErrorCategory } from "../core/media-player";
+import type { RequestContext, RequestPolicy } from "../core/request-policy";
+import { applyRequestPolicy } from "../core/apply-request-policy";
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
 import { DASHJS_SDK_URL } from "../core/sdk-config";
 import { mapNativeMediaError } from "./native-media-error";
+
+// dash.js's internal HTTPRequest.type string constants
+// (dist/modern/umd/dash.all.debug.js - MPD_TYPE='MPD',
+// MEDIA_SEGMENT_TYPE='MediaSegment', etc.), surfaced on
+// `request.customData.request.type` inside addRequestInterceptor - not part
+// of the public index.d.ts types (@svta/cml-request's CommonMediaRequest),
+// confirmed by reading the debug bundle (ADR-0001 D4).
+const DASH_SEGMENT_TYPES = new Set(['MediaSegment', 'InitializationSegment', 'IndexSegment', 'BitstreamSwitchingSegment', 'FragmentInfoSegment']);
+function classifyDashRequestType(type: string | undefined): RequestContext['type'] {
+  if (type === 'MPD') return 'manifest';
+  if (type === 'license' || type === 'licenseCertificate') return 'license';
+  if (type && DASH_SEGMENT_TYPES.has(type)) return 'segment';
+  return 'other';
+}
 
 // dash.js reports every error through one event carrying a numeric
 // `MediaPlayer.errors` code (see node_modules/dashjs/index.d.ts
@@ -109,10 +125,15 @@ export class DashPlayer implements IMediaPlayer {
   // called before `this.player` exists yet.
   private pendingSrc?: string;
   private nativeErrorHandler?: () => void;
+  // Read live by the addRequestInterceptor callback below at request time -
+  // see HlsPlayer's `requestPolicy` field comment for why (ADR-0001 D4).
+  private requestPolicy?: RequestPolicy;
+  private requestInterceptor?: (request: any) => Promise<any>;
 
-  constructor(private element: HTMLVideoElement) {
+  constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy) {
     log("Powered by Dash.js");
     this.nativeEl = element;
+    this.requestPolicy = requestPolicy;
     this.onReady = new Promise((resolve, reject) => {
       this.setup().then(resolve).catch(reject);
     });
@@ -128,6 +149,21 @@ export class DashPlayer implements IMediaPlayer {
     this.player = this.dashjs.MediaPlayer().create();
     this.player.initialize(this.nativeEl, null, true);
     this.player.updateSettings(this.config);
+
+    // The most stable request hook in dash.js 5.x (ADR-0001 D4): a single
+    // interceptor covers manifest/segment/license requests alike, unlike
+    // per-type credential settings. `request` is the SDK's own
+    // CommonMediaRequest object - `applyRequestPolicy` mutates its
+    // url/headers in place; `credentials` is set directly here since dash.js
+    // reads that field with the exact same 'omit'|'same-origin'|'include'
+    // values RequestPolicy uses.
+    this.requestInterceptor = (request: any) => {
+      const ctx: RequestContext = { url: request.url, type: classifyDashRequestType(request.customData?.request?.type), engine: 'dash.js' };
+      const ok = applyRequestPolicy(this.requestPolicy, ctx, request, (err) => this.errorCallback?.(err));
+      if (ok && this.requestPolicy?.credentials) request.credentials = this.requestPolicy.credentials; // defect 4
+      return Promise.resolve(request);
+    };
+    this.player.addRequestInterceptor(this.requestInterceptor);
 
     this.player.on(this.dashjs.MediaPlayer.events.ERROR, (e: any) => {
       if (this.errorCallback) {
@@ -242,8 +278,9 @@ export class DashPlayer implements IMediaPlayer {
     }
   }
 
-  load(src: string) {
+  load(src: string, requestPolicy?: RequestPolicy) {
     this.pendingSrc = src;
+    this.requestPolicy = requestPolicy;
     if (this.destroyed || !this.player) return;
     this.applyLoad(src);
   }
@@ -257,6 +294,10 @@ export class DashPlayer implements IMediaPlayer {
     }
 
     if (this.player) {
+      if (this.requestInterceptor) {
+        this.player.removeRequestInterceptor(this.requestInterceptor);
+        this.requestInterceptor = undefined;
+      }
       this.player.destroy();
       this.player = null;
     }

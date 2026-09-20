@@ -126,6 +126,55 @@ describe('own methods exist with the right shape', () => {
   });
 });
 
+// ADR-0001 D4 - no HTML attribute (headers with tokens don't belong in
+// markup): the only surface is this get/set property, forwarded to the core.
+describe('request property (ADR-0001 D4)', () => {
+  afterEach(() => {
+    (PlayerFactory.create as jest.Mock).mockReset();
+  });
+
+  it('defaults to undefined and round-trips through the getter', () => {
+    const el = createElement();
+    expect(el.request).toBeUndefined();
+
+    const policy = { headers: { Authorization: 'Bearer t' } };
+    el.request = policy;
+    expect(el.request).toBe(policy);
+  });
+
+  it('set before any src is assigned is picked up when the core is first created', () => {
+    let captured: unknown;
+    (PlayerFactory.create as jest.Mock).mockImplementation(((props: any) => {
+      captured = props.requestPolicy;
+      return fakePlayer();
+    }) as any);
+
+    const el = createElement();
+    const policy = { headers: { Authorization: 'Bearer t' } };
+    el.request = policy;
+    document.body.appendChild(el);
+    el.src = 'https://example.com/a.mp4';
+
+    expect(captured).toBe(policy);
+    el.remove();
+  });
+
+  it('set after the core exists calls core.configure() (next load(), not the active one)', () => {
+    (PlayerFactory.create as jest.Mock).mockImplementation((() => fakePlayer()) as any);
+
+    const el = createElement();
+    document.body.appendChild(el);
+    el.src = 'https://example.com/a.mp4';
+
+    const configureSpy = jest.spyOn((el as any).core, 'configure');
+    const policy = { credentials: 'include' as const };
+    el.request = policy;
+
+    expect(configureSpy).toHaveBeenCalledWith({ request: policy });
+    el.remove();
+  });
+});
+
 describe('isLive (Descoberta: dead attribute)', () => {
   it('defaults to false and is unaffected by the "live" attribute', () => {
     const el = createElement();

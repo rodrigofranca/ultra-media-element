@@ -265,6 +265,41 @@ play/pause/mute/seek/duration/troca de rendition/troca de src através de um
 `fronts/shell-migration/result.md` para o inventário completo de diferenças
 de base, mudanças de contrato e tamanhos antes/depois.
 
+## Status da etapa 4 - revisão (ciclo 2)
+
+Uma revisão independente da etapa 4 reprovou a implementação inicial por 6
+defeitos, todos corrigidos: (1, bloqueante) `transformUrl` assinava a URL
+duas vezes no retry interno do hls.js (`XhrLoader` reaproveitando o mesmo
+`context` - dash.js já era seguro, reconstrói a requisição do zero a cada
+tentativa); (2) `crossOrigin` não voltava ao valor original no `destroy()`;
+(3) `warning`s da política podiam ser emitidos antes de `wireUp()` registrar
+o callback da geração certa, ou vazar para a geração seguinte; (4) um
+`headers()` que lançava depois de um `transformUrl()` bem-sucedido deixava a
+requisição num estado misto; (5) a semântica de `credentials` por engine foi
+precisamente documentada (só `'include'` é distinguível na maioria dos
+caminhos - ver README.md); (6) licenças DRM continuam fora dos hooks de
+`options.request`, registrado e não implementado. Ver
+`fronts/request-policy/result-cycle2.md` para evidência vermelho→verde por
+defeito, a tabela de `credentials` por engine e os tamanhos antes/depois.
+
+## Status da etapa 4
+
+Implementada (`options.request`/`core.configure()`, headers/credentials/
+transformUrl aplicados a hls.js via `xhrSetup`+`fetchSetup`, a dash.js via
+`addRequestInterceptor`, e ao nativo/YouTube via `crossOrigin`+URL de
+nível superior com `warning REQUEST_HEADERS_UNSUPPORTED`), com um desvio do
+sketch original: `RequestContext` ganhou um campo `engine: string` que a
+minuta acima (D4) não tinha - necessário para um `headers(ctx)` cobrindo
+mais de um engine saber quem está pedindo, sem re-derivar isso de `type`/
+`url`. **Bloqueada em `pnpm size`:** o núcleo headless (`/core`, o que o
+primeiro host de produção realmente consome - D1) cabe nos seus limites
+(11.57/12 kB ESM, 8.47/9 kB UMD), mas a casca `<ultra-media>` excede os
+dela em 1.52 kB (ESM) e 243 B (UMD) - ela já estava a 0.06 kB do limite
+antes desta etapa, e o mecanismo mínimo de D4 (sem contar a classificação
+de `type`) já custa ~1.36 kB gzip só por si. Ver
+`fronts/request-policy/result.md` para os números completos e a pergunta
+em aberto.
+
 ## Open questions
 
 1. Build target for `/core`: which minimum Tizen/webOS years? Until answered,

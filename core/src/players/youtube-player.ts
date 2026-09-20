@@ -1,4 +1,6 @@
 import type { IMediaPlayer, MediaErrorCategory, MediaPlayerError } from "../core/media-player";
+import type { RequestPolicy } from "../core/request-policy";
+import { reportHeadersUnsupported, deferredGuardedReport } from "../core/apply-request-policy";
 import { YOUTUBE_IFRAME_API_URL } from "../core/sdk-config";
 
 // https://developers.google.com/youtube/iframe_api_reference#onError - every
@@ -323,9 +325,22 @@ export class YouTubePlayer implements IMediaPlayer, ElementProxy {
     this.errorCallback = callback;
   }
 
-  load(src: string): void {
+  // Nothing here can apply a request policy - YouTube's iframe embed has no
+  // top-level media URL of ours to rewrite/attach credentials to
+  // (`credentials`/`transformUrl` are silently ignored, documented in
+  // README.md); only `headers` gets a warning instead of being dropped
+  // without a trace (ADR-0001 D4).
+  load(src: string, requestPolicy?: RequestPolicy): void {
     const generation = ++this.loadGeneration;
     this.currentSrc = src;
+    if (requestPolicy?.headers) {
+      // Gated by this same loadGeneration (defect 3): a superseded load()
+      // must not warn once its microtask fires.
+      reportHeadersUnsupported({ url: src, type: 'other', engine: 'youtube' }, deferredGuardedReport(
+        (e) => this.errorCallback?.(e),
+        () => !this.isDestroyed && generation === this.loadGeneration,
+      ));
+    }
     this.element.dispatchEvent(new Event('emptied'));
     this.element.dispatchEvent(new Event('loadstart'));
 
