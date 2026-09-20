@@ -2,7 +2,7 @@ import { describe, it, expect, jest, afterEach } from '@jest/globals';
 import { UltraMediaElement } from '../src/ultra-media-element';
 import { PlayerFactory } from '../src/core/player-factory';
 
-// super-media-element and media-tracks ship ESM-only (no CJS build) and
+// custom-media-element and media-tracks ship ESM-only (no CJS build) and
 // aren't part of Jest's transform pipeline (see jest.config.cjs) - real
 // browser/e2e coverage for their behavior lives in core/e2e/tests/*.spec.ts.
 // This unit test only exercises UltraMediaElement's own destroy()/
@@ -11,10 +11,10 @@ import { PlayerFactory } from '../src/core/player-factory';
 // core's own reuse/teardown branching runs for real), so a minimal stand-in
 // for each base class is enough: just the pieces ultra-media-element.ts's
 // constructor and lifecycle callbacks touch.
-// `src` is a real property on the native SuperVideoElement (backed by the
+// `src` is a real property on the native CustomVideoElement (backed by the
 // `src` attribute) and it's what actually adds 'src' to the merged
 // static `observedAttributes` UltraMediaElement.observedAttributes reads
-// (see super-media-element.js) - both are needed here so tests further
+// (see custom-media-element.js) - both are needed here so tests further
 // down can exercise the real attribute-driven init/reload path instead of
 // only UltraMediaElement's own destroy()/connect debounce logic.
 //
@@ -28,11 +28,11 @@ import { PlayerFactory } from '../src/core/player-factory';
 // mock every other describe block already used, and asserts on the
 // observable effect (was PlayerFactory.create called again? was the fake
 // player's destroy() called?) instead of a private field's identity/value.
-jest.mock('super-media-element', () => ({
-  SuperVideoElement: class extends HTMLElement {
+jest.mock('custom-media-element', () => ({
+  CustomVideoElement: class extends HTMLElement {
     static observedAttributes = ['src'];
     private __nativeEl?: HTMLVideoElement;
-    // The real super-media-element attaches an open shadow root before
+    // The real custom-media-element attaches an open shadow root before
     // nativeEl exists - matched here so createCore()'s `this.shadowRoot ??
     // this` (cycle 2, defect 2) exercises its real branch, not the
     // shadow-DOM-less fallback.

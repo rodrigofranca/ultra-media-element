@@ -1,5 +1,5 @@
 import type { MediaPlayerError } from './core/media-player';
-import { SuperVideoElement, Events as SuperMediaEvents } from 'super-media-element';
+import { CustomVideoElement, Events as CustomMediaEvents } from 'custom-media-element';
 import { MediaTracksMixin } from 'media-tracks';
 import { UltraMediaCore, type UltraMediaCoreEvent } from './core/ultra-media-core';
 import { Format } from './core/format';
@@ -10,7 +10,7 @@ import { Format } from './core/format';
  * @element ultra-media
  * @attr {string} src - Source URL for the media
  */
-export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
+export class UltraMediaElement extends MediaTracksMixin(CustomVideoElement) {
 
   // ADR-0001: everything that used to be "orchestrate a player" now lives in
   // UltraMediaCore, instantiated once (lazily, once nativeEl/src are both
@@ -28,8 +28,22 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
   // src the active player last loaded - lets connectedCallback catch up a
   // src change made mid-move, while attributeChangedCallback left it alone.
   private loadedSrc: string | null = null;
+  // Unlike the previous base class (docs/adr/0001-headless-core-and-
+  // element-shell.md, D3), custom-media-element never reads this off the
+  // subclass - its own #forwardAttribute only skips an attribute that
+  // isn't in *its own* observedAttributes (e.g. our 'live'); 'src' *is* in
+  // that list (it's one of custom-media-element's own reflected
+  // `Attributes`), so it would forward every 'src' change straight onto
+  // nativeEl.setAttribute('src', ...) - firing the browser's native
+  // resource-selection algorithm on the raw manifest/media URL before the
+  // right engine (hls.js/dash.js/native/YouTube) ever attaches, which is
+  // exactly the fetch pending-load-cancel.spec.ts's "only requests C"
+  // assertions would catch. `attributeChangedCallback` below re-implements
+  // the skip itself instead (see its comment) - `skipAttributes` stays a
+  // real, consulted member of the contract, just enforced here now instead
+  // of by the base.
   static skipAttributes = ['src'];
-  // super-media-element forwards every native HTMLMediaElement event it
+  // custom-media-element forwards every native HTMLMediaElement event it
   // sees on `nativeEl` (its shadow-root-level capturing listener runs
   // before any listener a player attaches directly on `nativeEl`, so it
   // can't be pre-empted there) as a same-named CustomEvent with
@@ -41,10 +55,8 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
   // ahead of (and instead of) the real shaped one. Excluding it here makes
   // the core's error routing the only source of `error`/`warning`, for
   // every engine.
-  static Events = SuperMediaEvents.filter((type) => type !== 'error');
+  static Events = CustomMediaEvents.filter((type) => type !== 'error');
   public isLive = false;
-  public declare loadComplete?: Promise<void>;
-  public declare isLoaded: boolean;
 
   constructor() {
     super();
@@ -126,28 +138,39 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
    * re-initializes playback on the same core and resumes it.
    *
    * No public `load()` was added alongside this (unlike
-   * `HTMLMediaElement.load()`) - see result.md "decisões de design":
-   * super-media-element's own SuperMedia base gives `load` a reserved,
-   * different meaning (a per-subclass hook it detects via
-   * `this.load !== SuperMedia.prototype.load` and auto-invokes from ITS
-   * OWN attributeChangedCallback on every `src` change, wiring up its own
-   * `loadComplete`/`isLoaded` promise around it). Overriding it here would
-   * make the base class start calling it a second time on top of this
-   * class's own src-handling below - a behavior change to every `src`
-   * mutation project-wide, not just the destroy()-reload case, and out of
-   * this task's scope to take on.
+   * `HTMLMediaElement.load()`) - `load` is still the native passthrough
+   * method (proxies to `nativeEl.load()`, see public-contract.spec.ts), so
+   * overriding it here would shadow that passthrough project-wide, not just
+   * for the destroy()-reload case. (The previous base class - see
+   * docs/adr/0001-headless-core-and-element-shell.md, D3 - used to give
+   * `load` a second, reserved meaning of its own: a per-subclass hook it
+   * auto-invoked from its own attributeChangedCallback, wiring a
+   * `loadComplete`/`isLoaded` promise around it. custom-media-element drops
+   * that convention entirely - see result.md "Diferenças da base" - so this
+   * is now just "the passthrough method", nothing more.)
    */
   destroy(): void {
     this.core?.destroy();
   }
 
   static get observedAttributes() {
-    // Pega os atributos do SuperVideoElement e adiciona os novos
+    // Pega os atributos do CustomVideoElement e adiciona os novos
     return [...(super.observedAttributes ?? []), 'live'];
   }
 
-  async attributeChangedCallback(attrName: string, oldValue: string, newValue: string) {
-    super.attributeChangedCallback?.(attrName, oldValue, newValue);
+  attributeChangedCallback(attrName: string, oldValue: string, newValue: string) {
+    // `src` is in `skipAttributes` - the active player (hls.js/dash.js/
+    // native/YouTube) owns nativeEl.src (MSE blob URL, or the raw URL set
+    // by applySrcChange below), never attribute reflection. Reading
+    // `nativeEl` (not calling super.attributeChangedCallback) still runs
+    // custom-media-element's lazy init (shadow root + real <video>) without
+    // its own #forwardAttribute step - see the `skipAttributes` comment
+    // above for why that step must never run for `src`.
+    if (UltraMediaElement.skipAttributes.includes(attrName)) {
+      void this.nativeEl;
+    } else {
+      super.attributeChangedCallback?.(attrName, oldValue, newValue);
+    }
 
     if (attrName !== 'src') return;
 
@@ -161,10 +184,6 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
     // and playback stayed dead. `this.core?.src` (not `this.core` itself)
     // is the "is a player currently active" signal - see connectedCallback.
     if (oldValue === newValue && this.core?.src != null) return;
-
-    if (this.loadComplete && !this.isLoaded) {
-      await this.loadComplete;
-    }
 
     // Disconnected: leave the core alone - `src` becomes the pending value
     // connectedCallback reads (and, mid-move, catches up) on reconnect.
@@ -203,7 +222,7 @@ export class UltraMediaElement extends MediaTracksMixin(SuperVideoElement) {
     // visual spot as before: sibling to <video> inside the shadow tree
     // (see result-cycle2.md, defect 2). Falls back to `this` only for a
     // shadow-DOM-less test double - by the time nativeEl exists,
-    // super-media-element has always already attached a real shadow root.
+    // custom-media-element has always already attached a real shadow root.
     const core = new UltraMediaCore(this.nativeEl, { container: this.shadowRoot ?? this });
 
     core.addEventListener<MediaPlayerError>('error', (event) => this.forwardCoreEvent('error', event));

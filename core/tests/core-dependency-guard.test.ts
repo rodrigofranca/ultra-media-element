@@ -5,8 +5,9 @@ import os from 'node:os';
 
 /**
  * ADR-0001's dependency rule for the headless core: nothing under
- * `src/core-entry.ts`'s import graph may pull in `super-media-element`,
- * `media-tracks`, the element/ad shells, or use Custom Elements, Shadow
+ * `src/core-entry.ts`'s import graph may pull in `custom-media-element`
+ * (formerly `super-media-element`), `media-tracks`, the element/ad shells,
+ * or use Custom Elements, Shadow
  * DOM, `ResizeObserver`, the `EventTarget` constructor, or `#` private
  * class fields (the oldest Smart TV runtimes this targets may lack all of
  * those). This is a *source*-level static walk (works without a prior
@@ -18,7 +19,7 @@ import os from 'node:os';
 const SRC_ROOT = path.resolve(__dirname, '..', 'src');
 const ENTRY = path.join(SRC_ROOT, 'core-entry.ts');
 
-const FORBIDDEN_BARE_IMPORTS = ['super-media-element', 'media-tracks'];
+const FORBIDDEN_BARE_IMPORTS = ['super-media-element', 'custom-media-element', 'media-tracks'];
 const FORBIDDEN_LOCAL_FILES = ['ultra-media-element.ts', 'ultra-media-ad.ts'];
 const FORBIDDEN_API_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
   { name: 'customElements', pattern: /\bcustomElements\b/ },
@@ -113,7 +114,7 @@ describe('UltraMediaCore dependency guard (ADR-0001)', () => {
     expect(files.size).toBeGreaterThan(5);
   });
 
-  it('never imports super-media-element or media-tracks', () => {
+  it('never imports super-media-element, custom-media-element, or media-tracks', () => {
     expect(bareImportViolations).toEqual([]);
   });
 

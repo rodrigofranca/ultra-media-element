@@ -19,6 +19,93 @@
     },
     {
       "kind": "javascript-module",
+      "path": "src/core-entry.ts",
+      "declarations": [],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "UltraMediaCore",
+          "declaration": {
+            "name": "UltraMediaCore",
+            "module": "./core/ultra-media-core"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "UltraMediaCoreOptions",
+          "declaration": {
+            "name": "UltraMediaCoreOptions",
+            "module": "./core/ultra-media-core"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "UltraMediaSource",
+          "declaration": {
+            "name": "UltraMediaSource",
+            "module": "./core/ultra-media-core"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "UltraMediaCoreEvent",
+          "declaration": {
+            "name": "UltraMediaCoreEvent",
+            "module": "./core/ultra-media-core"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "UltraMediaCoreEventType",
+          "declaration": {
+            "name": "UltraMediaCoreEventType",
+            "module": "./core/ultra-media-core"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "Format",
+          "declaration": {
+            "name": "Format",
+            "module": "./core/format"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MediaPlayerError",
+          "declaration": {
+            "name": "MediaPlayerError",
+            "module": "./core/media-player"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MediaErrorCategory",
+          "declaration": {
+            "name": "MediaErrorCategory",
+            "module": "./core/media-player"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "VideoRendition",
+          "declaration": {
+            "name": "VideoRendition",
+            "module": "./core/media-player"
+          }
+        },
+        {
+          "kind": "js",
+          "name": "MediaTrack",
+          "declaration": {
+            "name": "MediaTrack",
+            "module": "./core/media-player"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
       "path": "src/index.ts",
       "declarations": [],
       "exports": [
@@ -195,9 +282,9 @@
           "members": [
             {
               "kind": "field",
-              "name": "player",
+              "name": "core",
               "type": {
-                "text": "IMediaPlayer | null"
+                "text": "UltraMediaCore | null"
               },
               "privacy": "private",
               "default": "null"
@@ -244,22 +331,6 @@
               "default": "false"
             },
             {
-              "kind": "field",
-              "name": "loadComplete",
-              "type": {
-                "text": "Promise<void> | undefined"
-              },
-              "privacy": "public"
-            },
-            {
-              "kind": "field",
-              "name": "isLoaded",
-              "type": {
-                "text": "boolean"
-              },
-              "privacy": "public"
-            },
-            {
               "kind": "method",
               "name": "setupTrackListeners",
               "privacy": "private"
@@ -272,7 +343,7 @@
                   "text": "void"
                 }
               },
-              "description": "Destroys the active player (hls.js/dash.js/YouTube/native) and releases\nits resources. Public and idempotent - safe to call repeatedly, and\nsafe to call before any player exists. Assigning `src` again afterwards\n(even to the same value - see attributeChangedCallback) re-initializes a\nfresh player and resumes playback.\n\nNo public `load()` was added alongside this (unlike\n`HTMLMediaElement.load()`) - see result.md \"decisões de design\":\nsuper-media-element's own SuperMedia base gives `load` a reserved,\ndifferent meaning (a per-subclass hook it detects via\n`this.load !== SuperMedia.prototype.load` and auto-invokes from ITS\nOWN attributeChangedCallback on every `src` change, wiring up its own\n`loadComplete`/`isLoaded` promise around it). Overriding it here would\nmake the base class start calling it a second time on top of this\nclass's own src-handling below - a behavior change to every `src`\nmutation project-wide, not just the destroy()-reload case, and out of\nthis task's scope to take on."
+              "description": "Destroys the active engine (hls.js/dash.js/YouTube/native) via the core\nand releases its resources. Public and idempotent - safe to call\nrepeatedly, and safe to call before any core exists. Assigning `src`\nagain afterwards (even to the same value - see attributeChangedCallback)\nre-initializes playback on the same core and resumes it.\n\nNo public `load()` was added alongside this (unlike\n`HTMLMediaElement.load()`) - `load` is still the native passthrough\nmethod (proxies to `nativeEl.load()`, see public-contract.spec.ts), so\noverriding it here would shadow that passthrough project-wide, not just\nfor the destroy()-reload case. (The previous base class - see\ndocs/adr/0001-headless-core-and-element-shell.md, D3 - used to give\n`load` a second, reserved meaning of its own: a per-subclass hook it\nauto-invoked from its own attributeChangedCallback, wiring a\n`loadComplete`/`isLoaded` promise around it. custom-media-element drops\nthat convention entirely - see result.md \"Diferenças da base\" - so this\nis now just \"the passthrough method\", nothing more.)"
             },
             {
               "kind": "method",
@@ -294,8 +365,47 @@
             },
             {
               "kind": "method",
-              "name": "initializePlayer",
-              "privacy": "private"
+              "name": "createCore",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "UltraMediaCore"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "forwardCoreEvent",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": {
+                    "text": "'error' | 'warning'"
+                  }
+                },
+                {
+                  "name": "event",
+                  "type": {
+                    "text": "UltraMediaCoreEvent<MediaPlayerError>"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "syncMediaTracks",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
             },
             {
               "kind": "method",
@@ -326,6 +436,7 @@
           ],
           "events": [
             {
+              "name": "type",
               "type": {
                 "text": "CustomEvent"
               }
@@ -350,8 +461,8 @@
             }
           ],
           "superclass": {
-            "name": "SuperVideoElement",
-            "package": "super-media-element"
+            "name": "CustomVideoElement",
+            "package": "custom-media-element"
           },
           "tagName": "ultra-media",
           "customElement": true
@@ -450,7 +561,7 @@
               },
               "parameters": [
                 {
-                  "name": "{ src, element, container, formats }",
+                  "name": "{ src, element, container, formats, format }",
                   "type": {
                     "text": "PlayerFactoryProps"
                   }
@@ -460,7 +571,6 @@
             {
               "kind": "method",
               "name": "resolveEngine",
-              "privacy": "private",
               "static": true,
               "return": {
                 "type": {
@@ -476,8 +586,16 @@
                 },
                 {
                   "name": "formats",
+                  "default": "DEFAULT_FORMATS",
                   "type": {
                     "text": "AvailableFormats"
+                  }
+                },
+                {
+                  "name": "explicitFormat",
+                  "optional": true,
+                  "type": {
+                    "text": "Format"
                   }
                 }
               ]
@@ -583,6 +701,374 @@
           "declaration": {
             "name": "YOUTUBE_IFRAME_API_URL",
             "module": "src/core/sdk-config.ts"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "javascript-module",
+      "path": "src/core/ultra-media-core.ts",
+      "declarations": [
+        {
+          "kind": "class",
+          "description": "",
+          "name": "UltraMediaCore",
+          "members": [
+            {
+              "kind": "field",
+              "name": "media",
+              "type": {
+                "text": "HTMLMediaElement"
+              },
+              "readonly": true,
+              "default": "media"
+            },
+            {
+              "kind": "field",
+              "name": "ready",
+              "type": {
+                "text": "Promise<void>"
+              },
+              "description": "Settles per load(); rejects on fatal error or if superseded by a later load()."
+            },
+            {
+              "kind": "field",
+              "name": "options",
+              "type": {
+                "text": "UltraMediaCoreOptions"
+              },
+              "privacy": "private",
+              "default": "options"
+            },
+            {
+              "kind": "field",
+              "name": "player",
+              "type": {
+                "text": "IMediaPlayer | null"
+              },
+              "privacy": "private",
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "generation",
+              "type": {
+                "text": "number"
+              },
+              "privacy": "private",
+              "default": "0"
+            },
+            {
+              "kind": "field",
+              "name": "resolveReady",
+              "type": {
+                "text": "() => void"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "rejectReady",
+              "type": {
+                "text": "(reason: unknown) => void"
+              },
+              "privacy": "private"
+            },
+            {
+              "kind": "field",
+              "name": "_src",
+              "type": {
+                "text": "string | null"
+              },
+              "privacy": "private",
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "_format",
+              "type": {
+                "text": "Format | null"
+              },
+              "privacy": "private",
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "_engine",
+              "type": {
+                "text": "string | null"
+              },
+              "privacy": "private",
+              "default": "null"
+            },
+            {
+              "kind": "field",
+              "name": "_renditions",
+              "type": {
+                "text": "readonly VideoRendition[]"
+              },
+              "privacy": "private",
+              "default": "[]"
+            },
+            {
+              "kind": "field",
+              "name": "_rendition",
+              "type": {
+                "text": "string | 'auto'"
+              },
+              "privacy": "private",
+              "default": "'auto'"
+            },
+            {
+              "kind": "field",
+              "name": "_audioTracks",
+              "type": {
+                "text": "readonly MediaTrack[]"
+              },
+              "privacy": "private",
+              "default": "[]"
+            },
+            {
+              "kind": "field",
+              "name": "_audioTrack",
+              "type": {
+                "text": "string | null"
+              },
+              "privacy": "private",
+              "default": "null"
+            },
+            {
+              "kind": "method",
+              "name": "freshReadyPromise",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "Promise<void>"
+                }
+              }
+            },
+            {
+              "kind": "field",
+              "name": "src",
+              "type": {
+                "text": "string | null"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "format",
+              "type": {
+                "text": "Format | null"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "engine",
+              "type": {
+                "text": "string | null"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "renditions",
+              "type": {
+                "text": "readonly VideoRendition[]"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "audioTracks",
+              "type": {
+                "text": "readonly MediaTrack[]"
+              },
+              "readonly": true
+            },
+            {
+              "kind": "field",
+              "name": "rendition",
+              "type": {
+                "text": "string | 'auto'"
+              }
+            },
+            {
+              "kind": "field",
+              "name": "audioTrack",
+              "type": {
+                "text": "string | null"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "load",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": {
+                    "text": "UltraMediaSource"
+                  }
+                }
+              ],
+              "description": "Same branching as the pre-extraction `applySrcChange`: reuse the current\nplayer via its own `load()` when the format is unchanged, otherwise\ndestroy it and create a fresh one. `destroy()` (called from here on a\nformat change, or by a consumer directly) always leaves `media` clean\nand ready for another `load()` on this same core, or a brand new core."
+            },
+            {
+              "kind": "method",
+              "name": "wireUp",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "player",
+                  "type": {
+                    "text": "IMediaPlayer"
+                  }
+                },
+                {
+                  "name": "generation",
+                  "type": {
+                    "text": "number"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "method",
+              "name": "teardownPlayer",
+              "privacy": "private",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "destroy",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "description": "Idempotent. Leaves `media` clean and reusable by this core or a new one."
+            },
+            {
+              "kind": "field",
+              "name": "listeners",
+              "privacy": "private",
+              "default": "new Map<string, Set<Listener<unknown>>>()",
+              "inheritedFrom": {
+                "name": "Emitter",
+                "module": "src/core/ultra-media-core.ts"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "addEventListener",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": {
+                    "text": "UltraMediaCoreEventType"
+                  }
+                },
+                {
+                  "name": "listener",
+                  "type": {
+                    "text": "Listener<T>"
+                  }
+                }
+              ],
+              "inheritedFrom": {
+                "name": "Emitter",
+                "module": "src/core/ultra-media-core.ts"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "removeEventListener",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": {
+                    "text": "UltraMediaCoreEventType"
+                  }
+                },
+                {
+                  "name": "listener",
+                  "type": {
+                    "text": "Listener<T>"
+                  }
+                }
+              ],
+              "inheritedFrom": {
+                "name": "Emitter",
+                "module": "src/core/ultra-media-core.ts"
+              }
+            },
+            {
+              "kind": "method",
+              "name": "emit",
+              "privacy": "protected",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              },
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": {
+                    "text": "UltraMediaCoreEventType"
+                  }
+                },
+                {
+                  "name": "detail",
+                  "type": {
+                    "text": "T"
+                  }
+                }
+              ],
+              "inheritedFrom": {
+                "name": "Emitter",
+                "module": "src/core/ultra-media-core.ts"
+              }
+            }
+          ],
+          "superclass": {
+            "name": "Emitter",
+            "module": "src/core/ultra-media-core.ts"
+          }
+        }
+      ],
+      "exports": [
+        {
+          "kind": "js",
+          "name": "UltraMediaCore",
+          "declaration": {
+            "name": "UltraMediaCore",
+            "module": "src/core/ultra-media-core.ts"
           }
         }
       ]
@@ -983,6 +1469,15 @@
               "privacy": "private"
             },
             {
+              "kind": "field",
+              "name": "usingNativeFallback",
+              "type": {
+                "text": "boolean"
+              },
+              "privacy": "private",
+              "default": "false"
+            },
+            {
               "kind": "method",
               "name": "setup",
               "privacy": "private"
@@ -1238,7 +1733,7 @@
               "kind": "field",
               "name": "container",
               "type": {
-                "text": "HTMLElement"
+                "text": "Node"
               },
               "privacy": "private",
               "default": "container"
@@ -1294,6 +1789,15 @@
               },
               "privacy": "private",
               "default": "false"
+            },
+            {
+              "kind": "field",
+              "name": "hiddenDisplay",
+              "type": {
+                "text": "{ value: string; hadStyleAttribute: boolean } | null"
+              },
+              "privacy": "private",
+              "default": "null"
             },
             {
               "kind": "field",
@@ -1432,6 +1936,16 @@
             {
               "kind": "method",
               "name": "destroy",
+              "return": {
+                "type": {
+                  "text": "void"
+                }
+              }
+            },
+            {
+              "kind": "method",
+              "name": "restoreElementDisplay",
+              "privacy": "private",
               "return": {
                 "type": {
                   "text": "void"
