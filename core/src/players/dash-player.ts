@@ -129,8 +129,12 @@ export class DashPlayer implements IMediaPlayer {
   // see HlsPlayer's `requestPolicy` field comment for why (ADR-0001 D4).
   private requestPolicy?: RequestPolicy;
   private requestInterceptor?: (request: any) => Promise<any>;
+  // ADR-0001 D5 - see hls-player.ts's equivalent fields' comment.
+  private liveCallback?: (isLive: boolean, playheadDate: Date | null) => void;
+  private streamEndedCallback?: () => void;
+  private wasLive = false;
 
-  constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy) {
+  constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy, private liveOpt?: boolean | 'auto') {
     log("Powered by Dash.js");
     this.nativeEl = element;
     this.requestPolicy = requestPolicy;
@@ -229,6 +233,40 @@ export class DashPlayer implements IMediaPlayer {
         };
         this.tracksChangeCallback(tracks);
       }
+      reportLive();
+    });
+
+    // ADR-0001 D5 - PLAYBACK_TIME_UPDATED (public event, fires on every
+    // native timeupdate-equivalent tick) recomputes isLive/playheadDate
+    // continuously during playback - deliberately *not* MANIFEST_LOADED/
+    // MANIFEST_UPDATED: dash.js's own periodic dynamic-MPD reload
+    // (ManifestUpdater's minimumUpdatePeriod timer) was confirmed, by
+    // reading dist/modern/umd/dash.all.debug.js and by direct observation
+    // against this package's fixture, to not reliably fire on every version/
+    // setup - tying live-info freshness to it left `core.live` stale for
+    // long stretches. PLAYBACK_TIME_UPDATED has no such dependency.
+    // DYNAMIC_TO_STATIC is dash.js's own direct signal for "this MPD just
+    // stopped being live" - the ENDLIST-equivalent - but wasn't observed to
+    // fire on a source reattach (attachSource() resets the manifest model
+    // dash.js compares old/new `type` against internally, in `_update()`) -
+    // confirmed empirically against this harness (see result.md "fixture
+    // live"). So the transition is *also* (primarily, in practice) caught
+    // the same way hls-player.ts's LEVEL_LOADED does it: comparing this
+    // tick's isDynamic() against the last one, inside reportLive() itself -
+    // both share the `wasLive` guard, so whichever fires first wins and the
+    // other becomes a no-op (never double-fires).
+    const reportLive = () => {
+      if (this.liveOpt === false) return;
+      const dynamicLive = this.player.isDynamic();
+      if (this.wasLive && !dynamicLive) this.streamEndedCallback?.();
+      this.wasLive = dynamicLive;
+      this.liveCallback?.(this.liveOpt === true || dynamicLive, dynamicLive ? new Date(this.player.timeAsUTC() * 1000) : null);
+    };
+    this.player.on(this.dashjs.MediaPlayer.events.PLAYBACK_TIME_UPDATED, reportLive);
+    this.player.on(this.dashjs.MediaPlayer.events.DYNAMIC_TO_STATIC, () => {
+      if (!this.wasLive) return;
+      this.wasLive = false;
+      this.streamEndedCallback?.();
     });
 
     // Belt-and-suspenders alongside dash.js's own native-error forwarding
@@ -278,9 +316,23 @@ export class DashPlayer implements IMediaPlayer {
     }
   }
 
+  onLiveChange(callback: (isLive: boolean, playheadDate: Date | null) => void) {
+    this.liveCallback = callback;
+  }
+
+  onStreamEnded(callback: () => void) {
+    this.streamEndedCallback = callback;
+  }
+
+  /** dash.js's own edge-seek - no-op if not currently live/not ready (ADR-0001 D5). */
+  goToLive(): void {
+    if (this.wasLive) this.player?.seekToOriginalLive?.();
+  }
+
   load(src: string, requestPolicy?: RequestPolicy) {
     this.pendingSrc = src;
     this.requestPolicy = requestPolicy;
+    this.wasLive = false;
     if (this.destroyed || !this.player) return;
     this.applyLoad(src);
   }

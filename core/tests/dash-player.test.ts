@@ -57,10 +57,18 @@ function setupMocks() {
     addRequestInterceptor: jest.fn(),
     removeRequestInterceptor: jest.fn(),
     destroy: jest.fn(),
+    isDynamic: jest.fn().mockReturnValue(false),
+    timeAsUTC: jest.fn().mockReturnValue(0),
+    seekToOriginalLive: jest.fn(),
   };
 
   const MediaPlayerFactory: any = jest.fn(() => ({ create: () => mockPlayerInstance }));
-  MediaPlayerFactory.events = { ERROR: 'error', STREAM_INITIALIZED: 'streamInitialized' };
+  MediaPlayerFactory.events = {
+    ERROR: 'error',
+    STREAM_INITIALIZED: 'streamInitialized',
+    PLAYBACK_TIME_UPDATED: 'playbackTimeUpdated',
+    DYNAMIC_TO_STATIC: 'dynamicToStatic',
+  };
   MediaPlayerFactory.errors = DASHJS_ERRORS;
 
   (window as any).dashjs = { MediaPlayer: MediaPlayerFactory };
@@ -302,9 +310,17 @@ function deferredDashImport() {
     addRequestInterceptor: jest.fn(),
     removeRequestInterceptor: jest.fn(),
     destroy: jest.fn(),
+    isDynamic: jest.fn().mockReturnValue(false),
+    timeAsUTC: jest.fn().mockReturnValue(0),
+    seekToOriginalLive: jest.fn(),
   };
   const MediaPlayerFactory: any = jest.fn(() => ({ create: () => mockPlayerInstance }));
-  MediaPlayerFactory.events = { ERROR: 'error', STREAM_INITIALIZED: 'streamInitialized' };
+  MediaPlayerFactory.events = {
+    ERROR: 'error',
+    STREAM_INITIALIZED: 'streamInitialized',
+    PLAYBACK_TIME_UPDATED: 'playbackTimeUpdated',
+    DYNAMIC_TO_STATIC: 'dynamicToStatic',
+  };
   MediaPlayerFactory.errors = DASHJS_ERRORS;
   const dashjsModule = { MediaPlayer: MediaPlayerFactory };
 
@@ -526,5 +542,94 @@ describe('DashPlayer request policy (ADR-0001 D4)', () => {
     player.destroy();
 
     expect(mockPlayerInstance.removeRequestInterceptor).toHaveBeenCalledWith(interceptor);
+  });
+});
+
+// ADR-0001 D5
+async function setupLivePlayer(liveOpt?: boolean | 'auto') {
+  const { handlers, mockPlayerInstance } = setupMocks();
+  const nativeEl = createVideoElement();
+  const player = new DashPlayer(nativeEl, undefined, liveOpt);
+  await player.onReady;
+  return { player, handlers, mockPlayerInstance, nativeEl };
+}
+
+describe('DashPlayer live (ADR-0001 D5)', () => {
+  afterEach(() => {
+    delete (window as any).dashjs;
+  });
+
+  it("'auto': isLive follows player.isDynamic(), playheadDate from player.timeAsUTC() (ms)", async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    mockPlayerInstance.timeAsUTC.mockReturnValue(1735689600); // seconds since epoch
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, new Date(1735689600 * 1000));
+  });
+
+  it('live: false never reports live, even when isDynamic() says so', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer(false);
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).not.toHaveBeenCalled();
+  });
+
+  it("live: true forces isLive even when isDynamic() says it isn't (playheadDate stays null - no real dynamic manifest to read UTC time from)", async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer(true);
+    mockPlayerInstance.isDynamic.mockReturnValue(false);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, null);
+  });
+
+  it('PLAYBACK_TIME_UPDATED recomputes live info continuously during playback', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.playbackTimeUpdated();
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, expect.any(Date));
+  });
+
+  it('streamended fires once on DYNAMIC_TO_STATIC, only when it was live', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    const onStreamEnded = jest.fn();
+    player.onStreamEnded(onStreamEnded);
+
+    handlers.dynamicToStatic(); // never was live - no-op
+    expect(onStreamEnded).not.toHaveBeenCalled();
+
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    handlers.streamInitialized();
+    handlers.dynamicToStatic();
+    handlers.dynamicToStatic(); // must not re-fire
+
+    expect(onStreamEnded).toHaveBeenCalledTimes(1);
+  });
+
+  it('goToLive() calls seekToOriginalLive() only while live', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+
+    player.goToLive();
+    expect(mockPlayerInstance.seekToOriginalLive).not.toHaveBeenCalled();
+
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    handlers.streamInitialized();
+    player.goToLive();
+
+    expect(mockPlayerInstance.seekToOriginalLive).toHaveBeenCalledTimes(1);
   });
 });
