@@ -23,6 +23,24 @@ export interface MediaTracks {
   renditions?: VideoRendition[];
 }
 
+/**
+ * ADR-0001 D5 - immutable snapshot, rebuilt by UltraMediaCore.buildLiveInfo()
+ * from `media.seekable`/`currentTime` (engine-agnostic: every MSE/native
+ * engine already maintains a correct native `seekable`) every time a player
+ * reports `isLive`/`playheadDate` via `onLiveChange`. `dvr`'s threshold and
+ * `liveEdge === seekableEnd` are documented simplifications - see
+ * result.md "critério de dvr/liveEdge".
+ */
+export interface LiveInfo {
+  isLive: boolean;
+  seekableStart: number;
+  seekableEnd: number;
+  liveEdge: number;
+  dvr: boolean;
+  latency?: number;
+  playheadDate: Date | null;
+}
+
 export type MediaErrorCategory = 'networkError' | 'mediaError' | 'otherError';
 
 /**
@@ -50,6 +68,12 @@ export interface IMediaPlayer {
   onError?(callback: (error: MediaPlayerError) => void): void;
   switchAudioTrack?(trackId: string): void;
   switchRendition?(renditionId: string): void;
+  /** ADR-0001 D5 - reports isLive/playheadDate on every manifest signal; the core derives the rest of LiveInfo. */
+  onLiveChange?(callback: (isLive: boolean, playheadDate: Date | null) => void): void;
+  /** Fires once per live->non-live transition (ENDLIST/static MPD/terminal manifest 404/native duration leaving Infinity). */
+  onStreamEnded?(callback: () => void): void;
+  /** No-op when not currently live. */
+  goToLive?(): void;
 }
 
 export type AvailableFormats = {
