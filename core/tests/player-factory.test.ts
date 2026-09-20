@@ -127,6 +127,32 @@ describe("PlayerFactory", () => {
     expect(element.dataset.type).toBe('do-host');
   });
 
+  // ADR-0001 D4 - create() forwards `requestPolicy` both to the engine's
+  // constructor (needed by hls.js/dash.js, whose setup is async) and to the
+  // load() call it makes internally.
+  it("forwards requestPolicy to HlsPlayer's construction", async () => {
+    let config: any;
+    (window as any).Hls = jest.fn().mockImplementation((cfg: any) => {
+      config = cfg;
+      return { attachMedia: jest.fn(), on: jest.fn(), loadSource: jest.fn() };
+    });
+    (window as any).Hls.Events = { ERROR: "hlsError", MANIFEST_PARSED: "hlsManifestParsed" };
+    (window as any).Hls.isSupported = jest.fn().mockReturnValue(true);
+
+    const element = createVideoElement();
+    const player = PlayerFactory.create({
+      src: "https://example.com/video.m3u8",
+      element,
+      container: document.createElement("div"),
+      requestPolicy: { headers: { Authorization: 'Bearer t' } },
+    });
+    await player.onReady;
+
+    const context: any = { url: 'https://example.com/video.m3u8', type: 'manifest' };
+    config.xhrSetup({ setRequestHeader: jest.fn() }, context.url, context);
+    expect(context.headers).toEqual({ Authorization: 'Bearer t' });
+  });
+
   it("resolveEngine() returns the same engine name create() would pick, without creating a player", () => {
     expect(PlayerFactory.resolveEngine("https://example.com/video.mp4")).toBe('video/mp4');
     expect(PlayerFactory.resolveEngine("https://example.com/video.m3u8")).toBe('hls.js');
