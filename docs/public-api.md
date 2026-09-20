@@ -18,7 +18,7 @@ Os herdados foram obtidos introspectando a classe real registrada
 contra os `.d.ts` ou a leitura do pacote `custom-media-element`/`media-tracks`,
 para capturar exatamente o que o mixin instala em runtime (inclui passthrough
 de propriedades nativas do `<video>`, adicionado dinamicamente por
-`custom-media-element`'s `#define()`). Total: **93 membros** (14 próprios,
+`custom-media-element`'s `#define()`). Total: **94 membros** (15 próprios,
 79 herdados: 6 de `custom-media-element` + 65 passthrough de
 `HTMLVideoElement`/`HTMLMediaElement` + 8 de `media-tracks`) — a composição
 dos 6 diretos mudou (`loadComplete`/`isLoaded` saíram, `init`/`handleEvent`
@@ -27,7 +27,10 @@ result.md da migração. Duas novas estáticas (`getTemplateHTML`,
 `shadowRootOptions`) também chegaram com a nova base — ver a tabela
 "Estáticos" abaixo — mas não somam ao inventário original de 93, que só
 contabilizava estáticas específicas (`Events`/`observedAttributes`/
-`skipAttributes`) e membros de instância/protótipo.
+`skipAttributes`) e membros de instância/protótipo. **ADR-0001 D4 (etapa 4,
+`fronts/request-policy/result.md`):** `request` (get/set accessor) somou-se
+aos próprios — 93 → 94; sem atributo HTML correspondente (headers com token
+não pertencem a markup).
 
 ## Estáticos
 
@@ -58,6 +61,7 @@ contabilizava estáticas específicas (`Events`/`observedAttributes`/
 | `changeSource(newSrc: string): Promise<void>` | método (seta o atributo `src`) | `tests/public-contract.test.ts` |
 | `getCurrentFormat(): Format \| undefined` | método | `tests/public-contract.test.ts` |
 | `isLive` | propriedade pública, sempre `false` (ver Descobertas) | `tests/public-contract.test.ts` |
+| `request` | get/set accessor, `RequestPolicy \| undefined` (ADR-0001 D4) — sem atributo HTML; `set` repassa para `core.configure({ request })` (só afeta o próximo `load()`) | `tests/public-contract.test.ts`, `e2e/tests/request-policy.spec.ts`, `e2e/tests/public-contract.spec.ts` |
 | `connectedCallback()` | lifecycle (spec de Custom Elements) | `tests/ultra-media-element-lifecycle.test.ts` |
 | `disconnectedCallback()` | lifecycle, teardown adiado por microtask | `tests/ultra-media-element-lifecycle.test.ts` |
 | `attributeChangedCallback()` | lifecycle | `tests/ultra-media-element-lifecycle.test.ts` |
@@ -178,11 +182,14 @@ dele. Travado por `tests/player-factory.test.ts`,
 
 ## Sumário do inventário
 
-- **93 membros** efetivos: 14 próprios (10 métodos/lifecycle + `isLive` +
-  3 estáticos), 79 herdados (6 `custom-media-element` diretos + 65
-  passthrough nativo + 8 `media-tracks`).
-- **14 atributos observados**, **28 eventos nativos reencaminhados** + 2
-  eventos próprios (`error`/`warning`) com shape dedicado.
+- **94 membros** efetivos (era 93 antes da etapa 4): 15 próprios (10
+  métodos/lifecycle + `isLive` + `request` + 3 estáticos), 79 herdados (6
+  `custom-media-element` diretos + 65 passthrough nativo + 8 `media-tracks`).
+- **14 atributos observados** (inalterado — `request` não é atributo,
+  ADR-0001 D4), **28 eventos nativos reencaminhados** + 2 eventos próprios
+  (`error`/`warning`) com shape dedicado.
+- **Etapa 4 (request policy, ADR-0001 D4):** `request` (get/set) somou-se
+  aos membros próprios — 93 → 94. Ver `fronts/request-policy/result.md`.
 - **Etapa 3 (migração `super-media-element` → `custom-media-element`,
   ADR-0001 D3):** contagem total inalterada (93), mas 2 dos 6 membros
   diretos da base mudaram (`loadComplete`/`isLoaded` → `init`/

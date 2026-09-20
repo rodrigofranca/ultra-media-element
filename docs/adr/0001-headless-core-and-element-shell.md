@@ -265,6 +265,24 @@ play/pause/mute/seek/duration/troca de rendition/troca de src através de um
 `fronts/shell-migration/result.md` para o inventário completo de diferenças
 de base, mudanças de contrato e tamanhos antes/depois.
 
+## Status da etapa 4
+
+Implementada (`options.request`/`core.configure()`, headers/credentials/
+transformUrl aplicados a hls.js via `xhrSetup`+`fetchSetup`, a dash.js via
+`addRequestInterceptor`, e ao nativo/YouTube via `crossOrigin`+URL de
+nível superior com `warning REQUEST_HEADERS_UNSUPPORTED`), com um desvio do
+sketch original: `RequestContext` ganhou um campo `engine: string` que a
+minuta acima (D4) não tinha - necessário para um `headers(ctx)` cobrindo
+mais de um engine saber quem está pedindo, sem re-derivar isso de `type`/
+`url`. **Bloqueada em `pnpm size`:** o núcleo headless (`/core`, o que o
+primeiro host de produção realmente consome - D1) cabe nos seus limites
+(11.57/12 kB ESM, 8.47/9 kB UMD), mas a casca `<ultra-media>` excede os
+dela em 1.52 kB (ESM) e 243 B (UMD) - ela já estava a 0.06 kB do limite
+antes desta etapa, e o mecanismo mínimo de D4 (sem contar a classificação
+de `type`) já custa ~1.36 kB gzip só por si. Ver
+`fronts/request-policy/result.md` para os números completos e a pergunta
+em aberto.
+
 ## Open questions
 
 1. Build target for `/core`: which minimum Tizen/webOS years? Until answered,
