@@ -1,6 +1,7 @@
 import { describe, it, expect, jest, afterEach } from '@jest/globals';
 import { DashPlayer } from '../src/players/dash-player';
 import type { MediaTracks } from '../src/core/media-player';
+import type { RequestPolicy } from '../src/core/request-policy';
 
 function createVideoElement(): HTMLVideoElement {
   return document.createElement('video');
@@ -53,6 +54,8 @@ function setupMocks() {
     setRepresentationForTypeByIndex: jest.fn(),
     setCurrentTrack: jest.fn(),
     attachSource: jest.fn(),
+    addRequestInterceptor: jest.fn(),
+    removeRequestInterceptor: jest.fn(),
     destroy: jest.fn(),
   };
 
@@ -296,6 +299,8 @@ function deferredDashImport() {
     updateSettings: jest.fn(),
     on: jest.fn(),
     attachSource,
+    addRequestInterceptor: jest.fn(),
+    removeRequestInterceptor: jest.fn(),
     destroy: jest.fn(),
   };
   const MediaPlayerFactory: any = jest.fn(() => ({ create: () => mockPlayerInstance }));
@@ -358,5 +363,111 @@ describe('DashPlayer cancellation (destroy()/rapid src swap during SDK load)', (
       expect(attachSource).toHaveBeenCalledTimes(1);
       expect(attachSource).toHaveBeenCalledWith('https://example.com/c.mpd');
     });
+  });
+});
+
+// ADR-0001 D4 - setupMocks()'s mockPlayerInstance.addRequestInterceptor
+// records the interceptor DashPlayer registers, so tests can invoke it
+// directly with a fake CommonMediaRequest, the same shape dash.js's own
+// HTTPLoader builds (url/headers/credentials + customData.request.type -
+// confirmed by reading dist/modern/umd/dash.all.debug.js, see dash-player.ts).
+async function setupPlayerWithInterceptor(requestPolicy?: RequestPolicy) {
+  const { handlers, mockPlayerInstance } = setupMocks();
+  const nativeEl = createVideoElement();
+  const player = new DashPlayer(nativeEl, requestPolicy);
+  await player.onReady;
+  const interceptor = (mockPlayerInstance.addRequestInterceptor as jest.Mock).mock.calls[0][0];
+  return { player, handlers, mockPlayerInstance, interceptor };
+}
+
+function fakeRequest(url: string, type: string, headers?: Record<string, string>) {
+  return { url, headers, customData: { request: { type } } };
+}
+
+describe('DashPlayer request policy (ADR-0001 D4)', () => {
+  afterEach(() => {
+    delete (window as any).dashjs;
+  });
+
+  it('applies static headers, classified by dash.js\'s internal HTTPRequest.type', async () => {
+    const { interceptor } = await setupPlayerWithInterceptor({ headers: { Authorization: 'Bearer t' } });
+    const request = fakeRequest('https://example.com/manifest.mpd', 'MPD');
+
+    await interceptor(request);
+
+    expect(request.headers).toEqual({ Authorization: 'Bearer t' });
+  });
+
+  it('classifies MPD/segment/license request types', async () => {
+    const headers = jest.fn().mockReturnValue({});
+    const { interceptor } = await setupPlayerWithInterceptor({ headers });
+
+    await interceptor(fakeRequest('m', 'MPD'));
+    await interceptor(fakeRequest('s', 'MediaSegment'));
+    await interceptor(fakeRequest('i', 'InitializationSegment'));
+    await interceptor(fakeRequest('l', 'license'));
+    await interceptor(fakeRequest('o', 'ContentSteering'));
+
+    expect(headers.mock.calls.map((c: any) => c[0].type)).toEqual(['manifest', 'segment', 'segment', 'license', 'other']);
+  });
+
+  it('a headers function is called once per request with the classified context', async () => {
+    const headers = jest.fn().mockReturnValue({ Authorization: 'Bearer t' });
+    const { interceptor } = await setupPlayerWithInterceptor({ headers });
+
+    await interceptor(fakeRequest('https://example.com/seg1.m4s', 'MediaSegment'));
+    await interceptor(fakeRequest('https://example.com/seg2.m4s', 'MediaSegment'));
+
+    expect(headers).toHaveBeenCalledTimes(2);
+    expect(headers).toHaveBeenCalledWith({ url: 'https://example.com/seg1.m4s', type: 'segment', engine: 'dash.js' });
+  });
+
+  it('transformUrl runs before headers(ctx), which sees the transformed URL; credentials is set directly on the request', async () => {
+    const headers = jest.fn().mockReturnValue({});
+    const { interceptor } = await setupPlayerWithInterceptor({
+      transformUrl: (ctx) => ctx.url + '?sig=1',
+      headers,
+      credentials: 'include',
+    });
+    const request = fakeRequest('https://example.com/manifest.mpd', 'MPD');
+
+    const result = await interceptor(request);
+
+    expect(result.url).toBe('https://example.com/manifest.mpd?sig=1');
+    expect(result.credentials).toBe('include');
+    expect(headers).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.com/manifest.mpd?sig=1' }));
+  });
+
+  it('a throwing headers()/transformUrl() reports REQUEST_POLICY_ERROR through onError instead of rejecting', async () => {
+    const { player, interceptor } = await setupPlayerWithInterceptor({
+      transformUrl: () => { throw new Error('boom'); },
+    });
+    const onError = jest.fn();
+    player.onError(onError);
+
+    const result = await interceptor(fakeRequest('https://example.com/manifest.mpd', 'MPD'));
+
+    expect(result).toBeTruthy();
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ fatal: false, code: 'REQUEST_POLICY_ERROR', engine: 'dash.js' }));
+  });
+
+  it('a later load() with a different request policy changes what the next request carries, without recreating the dash.js instance', async () => {
+    const { player, interceptor, mockPlayerInstance } = await setupPlayerWithInterceptor({ headers: { Authorization: 'Bearer old' } });
+
+    player.load('https://example.com/manifest.mpd', { headers: { Authorization: 'Bearer new' } });
+
+    const request = fakeRequest('https://example.com/manifest.mpd', 'MPD');
+    await interceptor(request);
+
+    expect(request.headers).toEqual({ Authorization: 'Bearer new' });
+    expect(mockPlayerInstance.attachSource).toHaveBeenCalledTimes(1);
+  });
+
+  it('destroy() removes the registered interceptor', async () => {
+    const { player, mockPlayerInstance, interceptor } = await setupPlayerWithInterceptor({ headers: { Authorization: 'Bearer t' } });
+
+    player.destroy();
+
+    expect(mockPlayerInstance.removeRequestInterceptor).toHaveBeenCalledWith(interceptor);
   });
 });
