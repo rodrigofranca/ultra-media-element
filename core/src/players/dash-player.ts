@@ -6,6 +6,7 @@ import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
 import { DASHJS_SDK_URL } from "../core/sdk-config";
 import { mapNativeMediaError } from "./native-media-error";
+import { normalizeLiveDate } from "../core/live-date";
 
 // dash.js's internal HTTPRequest.type string constants
 // (dist/modern/umd/dash.all.debug.js - MPD_TYPE='MPD',
@@ -134,6 +135,9 @@ export class DashPlayer implements IMediaPlayer {
   private streamEndedCallback?: () => void;
   private wasLive = false;
 
+  private originalPlay: (() => Promise<void>) | null = null;
+  private pendingPlay = false; // result-cycle3.md, defect 1
+
   constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy, private liveOpt?: boolean | 'auto') {
     log("Powered by Dash.js");
     this.nativeEl = element;
@@ -143,7 +147,29 @@ export class DashPlayer implements IMediaPlayer {
     });
   }
 
+  private guardPlay(): void {
+    this.originalPlay = this.nativeEl.play.bind(this.nativeEl);
+    if (this.nativeEl.autoplay) {
+      this.pendingPlay = true;
+      this.nativeEl.autoplay = false;
+    }
+    this.nativeEl.play = (): Promise<void> => {
+      this.pendingPlay = true;
+      return Promise.resolve();
+    };
+  }
+
+  private releasePlay(invoke: boolean): void {
+    if (!this.originalPlay) return;
+    const play = this.originalPlay;
+    this.originalPlay = null;
+    this.nativeEl.play = play;
+    if (invoke && this.pendingPlay) play().catch(() => {});
+  }
+
   private async setup() {
+    this.guardPlay();
+
     if (isUndefined(this.dashjs)) {
       this.dashjs = await loadSDK(this.sdkSrc, 'dashjs');
     }
@@ -187,8 +213,9 @@ export class DashPlayer implements IMediaPlayer {
 
         const data = err.data ?? {};
         const errors = this.dashjs.MediaPlayer.errors;
+        const fatal = !isDashErrorRecoverable(code, errors);
         this.errorCallback({
-          fatal: !isDashErrorRecoverable(code, errors),
+          fatal,
           category: categorizeDashError(code, errors),
           code: code != null ? String(code) : 'unknown',
           message: err.message || 'unknown',
@@ -197,6 +224,7 @@ export class DashPlayer implements IMediaPlayer {
           status: data.response?.status,
           cause: err,
         });
+        if (fatal) this.releasePlay(true); // don't leave a queued play() hanging
       }
     });
 
@@ -234,6 +262,7 @@ export class DashPlayer implements IMediaPlayer {
         this.tracksChangeCallback(tracks);
       }
       reportLive();
+      this.releasePlay(true); // result-cycle3.md, defect 1
     });
 
     // ADR-0001 D5 - PLAYBACK_TIME_UPDATED (public event, fires on every
@@ -259,14 +288,9 @@ export class DashPlayer implements IMediaPlayer {
       const dynamicLive = this.player.isDynamic();
       if (this.wasLive && !dynamicLive) this.streamEndedCallback?.();
       this.wasLive = dynamicLive;
-      // result-cycle2.md, defect 6: dash.js's timeAsUTC() returns NaN
-      // before playback actually starts and on VOD (dash.all.debug.js's
-      // PlaybackController#getTimeToStreamEnd/time() path) - `new
-      // Date(NaN)` is an Invalid Date, silently poisoning every consumer
-      // that formats/compares it. Normalize to null like every other
-      // engine's "no wallclock available" case.
+      // result-cycle2.md, defect 6 - timeAsUTC() is NaN before playback starts/on VOD; normalizeLiveDate -> null.
       const utcSeconds = dynamicLive ? this.player.timeAsUTC() : NaN;
-      const playheadDate = Number.isFinite(utcSeconds) ? new Date(utcSeconds * 1000) : null;
+      const playheadDate = normalizeLiveDate(new Date(utcSeconds * 1000));
       this.liveCallback?.(this.liveOpt === true || dynamicLive, playheadDate, this.computeLiveEdgeOffset());
     };
     this.player.on(this.dashjs.MediaPlayer.events.PLAYBACK_TIME_UPDATED, reportLive);
@@ -365,6 +389,7 @@ export class DashPlayer implements IMediaPlayer {
 
   destroy() {
     this.destroyed = true;
+    this.releasePlay(false);
 
     if (this.nativeErrorHandler) {
       this.nativeEl.removeEventListener('error', this.nativeErrorHandler);
