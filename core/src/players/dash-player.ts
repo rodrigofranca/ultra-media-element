@@ -130,7 +130,7 @@ export class DashPlayer implements IMediaPlayer {
   private requestPolicy?: RequestPolicy;
   private requestInterceptor?: (request: any) => Promise<any>;
   // ADR-0001 D5 - see hls-player.ts's equivalent fields' comment.
-  private liveCallback?: (isLive: boolean, playheadDate: Date | null) => void;
+  private liveCallback?: (isLive: boolean, playheadDate: Date | null, liveEdgeOffsetSeconds?: number) => void;
   private streamEndedCallback?: () => void;
   private wasLive = false;
 
@@ -239,28 +239,35 @@ export class DashPlayer implements IMediaPlayer {
     // ADR-0001 D5 - PLAYBACK_TIME_UPDATED (public event, fires on every
     // native timeupdate-equivalent tick) recomputes isLive/playheadDate
     // continuously during playback - deliberately *not* MANIFEST_LOADED/
-    // MANIFEST_UPDATED: dash.js's own periodic dynamic-MPD reload
-    // (ManifestUpdater's minimumUpdatePeriod timer) was confirmed, by
-    // reading dist/modern/umd/dash.all.debug.js and by direct observation
-    // against this package's fixture, to not reliably fire on every version/
-    // setup - tying live-info freshness to it left `core.live` stale for
-    // long stretches. PLAYBACK_TIME_UPDATED has no such dependency.
-    // DYNAMIC_TO_STATIC is dash.js's own direct signal for "this MPD just
-    // stopped being live" - the ENDLIST-equivalent - but wasn't observed to
-    // fire on a source reattach (attachSource() resets the manifest model
-    // dash.js compares old/new `type` against internally, in `_update()`) -
-    // confirmed empirically against this harness (see result.md "fixture
-    // live"). So the transition is *also* (primarily, in practice) caught
-    // the same way hls-player.ts's LEVEL_LOADED does it: comparing this
-    // tick's isDynamic() against the last one, inside reportLive() itself -
-    // both share the `wasLive` guard, so whichever fires first wins and the
-    // other becomes a no-op (never double-fires).
+    // MANIFEST_UPDATED: those only fire on dash.js's own periodic
+    // ManifestUpdater reload, which *does* happen reliably here (see
+    // result-cycle2.md, defect 9 - ciclo 1's claim that it didn't was
+    // wrong), but at most once per `minimumUpdatePeriod` - PLAYBACK_TIME_UPDATED
+    // gives `core.live` a much shorter, playback-driven refresh cadence
+    // instead of being capped by however slow the manifest's own update
+    // period is. DYNAMIC_TO_STATIC is dash.js's own direct signal for "this
+    // MPD just stopped being live" - the ENDLIST-equivalent, fired from a
+    // real autonomous reload - but doesn't fire on a source reattach
+    // (attachSource() resets the manifest model dash.js compares old/new
+    // `type` against internally, in `_update()`), so the transition is
+    // *also* caught the same way hls-player.ts's LEVEL_LOADED does it:
+    // comparing this tick's isDynamic() against the last one, inside
+    // reportLive() itself - both share the `wasLive` guard, so whichever
+    // fires first wins and the other becomes a no-op (never double-fires).
     const reportLive = () => {
       if (this.liveOpt === false) return;
       const dynamicLive = this.player.isDynamic();
       if (this.wasLive && !dynamicLive) this.streamEndedCallback?.();
       this.wasLive = dynamicLive;
-      this.liveCallback?.(this.liveOpt === true || dynamicLive, dynamicLive ? new Date(this.player.timeAsUTC() * 1000) : null);
+      // result-cycle2.md, defect 6: dash.js's timeAsUTC() returns NaN
+      // before playback actually starts and on VOD (dash.all.debug.js's
+      // PlaybackController#getTimeToStreamEnd/time() path) - `new
+      // Date(NaN)` is an Invalid Date, silently poisoning every consumer
+      // that formats/compares it. Normalize to null like every other
+      // engine's "no wallclock available" case.
+      const utcSeconds = dynamicLive ? this.player.timeAsUTC() : NaN;
+      const playheadDate = Number.isFinite(utcSeconds) ? new Date(utcSeconds * 1000) : null;
+      this.liveCallback?.(this.liveOpt === true || dynamicLive, playheadDate, this.computeLiveEdgeOffset());
     };
     this.player.on(this.dashjs.MediaPlayer.events.PLAYBACK_TIME_UPDATED, reportLive);
     this.player.on(this.dashjs.MediaPlayer.events.DYNAMIC_TO_STATIC, () => {
@@ -316,7 +323,7 @@ export class DashPlayer implements IMediaPlayer {
     }
   }
 
-  onLiveChange(callback: (isLive: boolean, playheadDate: Date | null) => void) {
+  onLiveChange(callback: (isLive: boolean, playheadDate: Date | null, liveEdgeOffsetSeconds?: number) => void) {
     this.liveCallback = callback;
   }
 
@@ -329,9 +336,28 @@ export class DashPlayer implements IMediaPlayer {
     if (this.wasLive) this.player?.seekToOriginalLive?.();
   }
 
-  load(src: string, requestPolicy?: RequestPolicy) {
+  // result-cycle2.md, defect 8 - dash.js's own configured target live delay
+  // (`getTargetLiveDelay()` -> `playbackController.getOriginalLiveDelay()`,
+  // dash.all.debug.js) is exactly "the normal distance from now back to the
+  // live edge" this engine targets - mirrors hls-player.ts's
+  // targetLatency/liveSyncPosition. Throws PLAYBACK_NOT_INITIALIZED_ERROR
+  // before initializePlayback() has run (dash.all.debug.js's own guard) -
+  // not otherwise reachable from reportLive() (only called from
+  // STREAM_INITIALIZED/PLAYBACK_TIME_UPDATED, both post-init), but guarded
+  // anyway since it's a public SDK call this file doesn't control.
+  private computeLiveEdgeOffset(): number | undefined {
+    try {
+      const delay = this.player?.getTargetLiveDelay?.();
+      return typeof delay === 'number' && Number.isFinite(delay) ? delay : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  load(src: string, requestPolicy?: RequestPolicy, live?: boolean | 'auto') {
     this.pendingSrc = src;
     this.requestPolicy = requestPolicy;
+    this.liveOpt = live; // result-cycle2.md, defect 4
     this.wasLive = false;
     if (this.destroyed || !this.player) return;
     this.applyLoad(src);
