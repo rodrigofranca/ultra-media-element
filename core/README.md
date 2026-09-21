@@ -338,6 +338,11 @@ Na casca, o atributo `live` faz o mesmo (`<ultra-media live src="...">`);
   sem MSE** (Safari/Smart TVs antigas - via a mesma detecção nativa do
   mp4/mp3). Sem suporte: YouTube (`isLive` sempre `false` - fora de
   escopo).
+- Autoplay em live (DASH): chamar `video.play()`/`el.play()` no mesmo tick
+  de `load()`, ou usar o atributo `autoplay`, é seguro - a recarga
+  autônoma do MPD não depende mais de quando a reprodução real começa
+  (fronts/live/result-cycle3.md, defeito 1). Antes, um `play()` prematuro
+  podia deixar a sessão inteira sem recarregar o MPD.
 
 ---
 

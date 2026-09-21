@@ -195,7 +195,7 @@ interface LiveInfo {
   readonly liveEdge: number;     // borda de sincronismo real do engine (hls.js liveSyncPosition, dash.js target live delay) - ver "critério de dvr/liveEdge" em result-cycle2.md
   readonly dvr: boolean;         // janela > max(30s, 2x a distância normal até a borda) - ver result-cycle2.md
   readonly latency?: number;     // segundos que currentTime está atrás de liveEdge - lido sob demanda (getter), não dispara evento
-  readonly playheadDate: Date | null; // idem - recalculado a cada leitura de core.live
+  readonly playheadDate: Date | null; // idem - recalculado a cada leitura de core.live; Date com getTime() finito, ou null - nunca Invalid Date (fronts/live/result-cycle3.md, defeito 2)
 }
 UltraMediaCoreOptions.live?: boolean | 'auto';  // default 'auto'; configure({ live }) só vale a partir do próximo load()
 core.live: LiveInfo;             // getter - snapshot novo e congelado (Object.freeze) a cada leitura, nunca compartilhado
@@ -211,6 +211,12 @@ YouTube sempre `isLive: false` (fora de escopo). A borda inicial (hls.js
 `liveSyncPosition`, dash.js seu próprio delay de live, heurística
 documentada no fallback nativo) é o que `core.live.liveEdge` reporta e o
 que `goToLive()` mira nos engines que expõem uma posição própria.
+
+Chamar `play()` (núcleo ou casca) no mesmo tick de `load()`, ou usar o
+atributo `autoplay`, é seguro no engine DASH: a recarga autônoma do MPD não
+depende mais de quando a reprodução real começa (fronts/live/result-cycle3.md,
+defeito 1) — antes, um `play()` anterior ao primeiro `livechange` podia
+deixar a sessão inteira sem recarregar o MPD.
 
 Na casca: `live` (atributo), `isLive`/`liveInfo`/`goToLive()` (mirror do
 core), e `streamType`/`targetLiveWindow`/`liveEdgeStart` (compatibilidade
