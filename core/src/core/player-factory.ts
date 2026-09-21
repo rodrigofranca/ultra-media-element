@@ -121,8 +121,11 @@ export class PlayerFactory {
     // `onReady.then(() => player.load(src))` fired with this closure's
     // stale `src` *after* any such later call, always re-loading the wrong,
     // stale source once the SDK caught up. See result.md "decisões de
-    // design".
-    player.load(src, requestPolicy);
+    // design". `live` is passed here too (same value already used to
+    // construct the engine above) so load()'s own live-option handling
+    // (result-cycle2.md, defect 4) has a single source of truth whether
+    // this is the first load() or a later reused-engine one.
+    player.load(src, requestPolicy, live);
     return player;
   }
 

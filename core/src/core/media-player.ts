@@ -24,21 +24,34 @@ export interface MediaTracks {
 }
 
 /**
- * ADR-0001 D5 - immutable snapshot, rebuilt by UltraMediaCore.buildLiveInfo()
- * from `media.seekable`/`currentTime` (engine-agnostic: every MSE/native
- * engine already maintains a correct native `seekable`) every time a player
- * reports `isLive`/`playheadDate` via `onLiveChange`. `dvr`'s threshold and
- * `liveEdge === seekableEnd` are documented simplifications - see
- * result.md "critério de dvr/liveEdge".
+ * ADR-0001 D5 - immutable, frozen snapshot (result-cycle2.md, defect 3):
+ * `UltraMediaCore.live` always returns a fresh `Object.freeze`d object with
+ * its own `playheadDate` (a new `Date`, never a reference shared with a
+ * previous snapshot or the engine's own internal one) - mutating a returned
+ * snapshot (or its `playheadDate`) can never leak into another snapshot or
+ * into the core's own state.
+ *
+ * `isLive`/`seekableStart`/`seekableEnd`/`liveEdge`/`dvr` only change (and
+ * only then does `livechange` fire) when a player reports a relevant
+ * transition (result-cycle2.md, defect 7); `playheadDate`/`latency` are
+ * instead recomputed fresh on every read of `core.live` from the last
+ * engine-reported reference point + how far `currentTime` has moved since -
+ * see `UltraMediaCore`'s "instant" getter, `result-cycle2.md`.
+ *
+ * `liveEdge`/`dvr` are derived from a per-engine "distance from
+ * seekableEnd to the normal live-sync position" (hls.js `liveSyncPosition`/
+ * `targetLatency`, dash.js `getTargetLiveDelay()`, a documented heuristic
+ * for native playback) - see result-cycle2.md, defect 8.
  */
 export interface LiveInfo {
-  isLive: boolean;
-  seekableStart: number;
-  seekableEnd: number;
-  liveEdge: number;
-  dvr: boolean;
-  latency?: number;
-  playheadDate: Date | null;
+  readonly isLive: boolean;
+  readonly seekableStart: number;
+  readonly seekableEnd: number;
+  readonly liveEdge: number;
+  readonly dvr: boolean;
+  /** Seconds `currentTime` trails `liveEdge` by; `undefined` when not live. Read on demand - see the type doc comment. */
+  readonly latency?: number;
+  readonly playheadDate: Date | null;
 }
 
 export type MediaErrorCategory = 'networkError' | 'mediaError' | 'otherError';
@@ -62,14 +75,28 @@ export interface MediaPlayerError {
 
 export interface IMediaPlayer {
   onReady: Promise<void>;
-  load(src: string, requestPolicy?: RequestPolicy): void;
+  /**
+   * `live` (result-cycle2.md, defect 4): applies starting with *this*
+   * load() - lets `configure({ live })` reach an engine reused across a
+   * same-format `load()`, exactly like `requestPolicy`. Omitted/`undefined`
+   * behaves like `'auto'`, same as the constructor-time default.
+   */
+  load(src: string, requestPolicy?: RequestPolicy, live?: boolean | 'auto'): void;
   destroy(): void;
   onTracksChange?(callback: (tracks: MediaTracks) => void): void;
   onError?(callback: (error: MediaPlayerError) => void): void;
   switchAudioTrack?(trackId: string): void;
   switchRendition?(renditionId: string): void;
-  /** ADR-0001 D5 - reports isLive/playheadDate on every manifest signal; the core derives the rest of LiveInfo. */
-  onLiveChange?(callback: (isLive: boolean, playheadDate: Date | null) => void): void;
+  /**
+   * ADR-0001 D5 - reports isLive/playheadDate on every manifest signal, plus
+   * (result-cycle2.md, defect 8) `liveEdgeOffsetSeconds`: this engine's
+   * current "normal" distance from `seekableEnd` to its own live-sync
+   * position (hls.js `liveSyncPosition`/`targetLatency`, dash.js
+   * `getTargetLiveDelay()`, a documented heuristic for native playback) -
+   * `undefined` when the engine has no opinion yet. The core derives the
+   * rest of LiveInfo from these plus `media.seekable`/`currentTime`.
+   */
+  onLiveChange?(callback: (isLive: boolean, playheadDate: Date | null, liveEdgeOffsetSeconds?: number) => void): void;
   /** Fires once per live->non-live transition (ENDLIST/static MPD/terminal manifest 404/native duration leaving Infinity). */
   onStreamEnded?(callback: () => void): void;
   /** No-op when not currently live. */
