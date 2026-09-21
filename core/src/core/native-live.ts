@@ -1,3 +1,5 @@
+import { normalizeLiveDate } from './live-date';
+
 /**
  * ADR-0001 D5 - shared "is this native-driven <video> live" detection, used
  * by native-media-player.ts (mp4/mp3) and hls-player.ts's native-HLS-
@@ -32,7 +34,8 @@ export function watchNativeLive(
     if (wasLive && !live) ended();
     wasLive = live;
     const start: Date | undefined = (element as unknown as { getStartDate?(): Date }).getStartDate?.();
-    report(live, live && start ? new Date(+start + element.currentTime * 1000) : null, live ? NATIVE_LIVE_EDGE_OFFSET_SECONDS : undefined);
+    const playheadDate = live && start ? normalizeLiveDate(new Date(+start + element.currentTime * 1000)) : null;
+    report(live, playheadDate, live ? NATIVE_LIVE_EDGE_OFFSET_SECONDS : undefined);
   };
   // result-cycle2.md, defect 8: durationchange/loadedmetadata alone only
   // report at load start - a DVR window that grows over the course of

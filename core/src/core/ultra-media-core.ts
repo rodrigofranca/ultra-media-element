@@ -3,6 +3,7 @@ import type { RequestPolicy } from './request-policy';
 import { PlayerFactory } from './player-factory';
 import { Format } from './format';
 import { detectFormat } from './format-detector';
+import { normalizeLiveDate } from './live-date';
 
 /**
  * ADR-0001 D1/D2 - pure engine-orchestration class, zero runtime deps,
@@ -240,7 +241,7 @@ export class UltraMediaCore extends Emitter {
   private computePlayheadDate(): Date | null {
     if (!this._playheadRef) return null;
     const elapsedMs = (this.media.currentTime - this._playheadRef.mediaTime) * 1000;
-    return new Date(this._playheadRef.date.getTime() + elapsedMs);
+    return normalizeLiveDate(new Date(this._playheadRef.date.getTime() + elapsedMs));
   }
 
   private computeWindow(isLive: boolean, liveEdgeOffsetSeconds: number | undefined): LiveWindowState {
