@@ -7,6 +7,7 @@ import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
 import { HLS_JS_SDK_URL } from "../core/sdk-config";
 import { mapNativeMediaError } from "./native-media-error";
+import { normalizeLiveDate } from "../core/live-date";
 
 // hls.js's LoaderContextType values (node_modules/hls.js/dist/hls.d.ts) -
 // MANIFEST/LEVEL/AUDIO_TRACK/SUBTITLE_TRACK/STEERING_MANIFEST are all
@@ -84,6 +85,7 @@ export class HlsPlayer implements IMediaPlayer {
   private streamEndedCallback?: () => void;
   private wasLive = false;
   private nativeLive?: NativeLiveWatch;
+  private levelLoadedHandler?: (event: unknown, data: any) => void;
 
   constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy, private liveOpt?: boolean | 'auto') {
     log("Powered by Hls.js");
@@ -147,41 +149,6 @@ export class HlsPlayer implements IMediaPlayer {
     this.hls = new this.Hls(this.config);
     this.hls.attachMedia(this.nativeEl);
 
-    // ADR-0001 D5 - streamended fires purely on the ENDLIST transition
-    // (data.details.live going true -> false); a terminal manifest error
-    // stays `error` below, unredirected - see result.md "critério de
-    // streamended vs error" for why (the fixture's "end broadcast" control
-    // always publishes ENDLIST, never a bare 404, so this is the only
-    // signal that actually distinguishes the two here).
-    //
-    // result-cycle2.md, defect 5: LEVEL_LOADED fires for *every* rendition
-    // hls.js loads a playlist for, not just the one actually playing (ABR
-    // probing during a switch loads the candidate level's playlist ahead of
-    // actually switching to it, a manual switchRendition, or an alternate
-    // audio/subtitle playlist) - reacting to any of them let another
-    // rendition's live:false (or a mid-switch reload) end/mask the
-    // currently active one's state. `hls.currentLevel` is the level
-    // actually driving playback right now (only changes once a switch is
-    // committed, not merely queued) - the right "active" reference; falls
-    // back to `loadLevel` before the very first level has ever played
-    // (`currentLevel` is -1 until then).
-    this.hls.on(this.Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
-      if (this.liveOpt === false) return;
-      const currentLevel = typeof this.hls.currentLevel === 'number' ? this.hls.currentLevel : -1;
-      const loadLevel = typeof this.hls.loadLevel === 'number' ? this.hls.loadLevel : -1;
-      const activeLevel = currentLevel !== -1 ? currentLevel : loadLevel;
-      if (typeof data.level === 'number' && activeLevel !== -1 && data.level !== activeLevel) return;
-      // `wasLive`/the transition check always tracks the *manifest's own*
-      // signal, never the liveOpt:true override below - otherwise a forced-
-      // live stream could never report streamended once ENDLIST genuinely
-      // appears (liveOpt:true would keep masking it forever). The override
-      // only ever affects what's *reported* as isLive.
-      const manifestLive = !!data.details?.live;
-      if (this.wasLive && !manifestLive) this.streamEndedCallback?.();
-      this.wasLive = manifestLive;
-      this.liveCallback?.(this.liveOpt === true || manifestLive, this.hls.playingDate ?? null, this.computeLiveEdgeOffset());
-    });
-
     this.hls.on(this.Hls.Events.ERROR, (_event: any, data: any) => {
       if (this.errorCallback) {
         this.errorCallback({
@@ -240,11 +207,55 @@ export class HlsPlayer implements IMediaPlayer {
     }
   }
 
+  // ADR-0001 D5 - streamended fires purely on the ENDLIST transition
+  // (data.details.live going true -> false); a terminal manifest error
+  // stays `error` below, unredirected - see result.md "critério de
+  // streamended vs error" for why (the fixture's "end broadcast" control
+  // always publishes ENDLIST, never a bare 404, so this is the only
+  // signal that actually distinguishes the two here).
+  //
+  // result-cycle2.md, defect 5: LEVEL_LOADED fires for *every* rendition
+  // hls.js loads a playlist for, not just the one actually playing (ABR
+  // probing during a switch loads the candidate level's playlist ahead of
+  // actually switching to it, a manual switchRendition, or an alternate
+  // audio/subtitle playlist) - reacting to any of them let another
+  // rendition's live:false (or a mid-switch reload) end/mask the
+  // currently active one's state. `hls.currentLevel` is the level
+  // actually driving playback right now (only changes once a switch is
+  // committed, not merely queued) - the right "active" reference; falls
+  // back to `loadLevel` before the very first level has ever played
+  // (`currentLevel` is -1 until then).
+  //
+  // result-cycle3.md, defect 3 - re-bound per applyLoad(), bailing on `generation` first.
+  private bindLevelLoaded(): void {
+    if (this.levelLoadedHandler) this.hls.off(this.Hls.Events.LEVEL_LOADED, this.levelLoadedHandler);
+    const generation = this.loadGeneration;
+    this.levelLoadedHandler = (_event: unknown, data: any) => {
+      if (generation !== this.loadGeneration) return;
+      if (this.liveOpt === false) return;
+      const currentLevel = typeof this.hls.currentLevel === 'number' ? this.hls.currentLevel : -1;
+      const loadLevel = typeof this.hls.loadLevel === 'number' ? this.hls.loadLevel : -1;
+      const activeLevel = currentLevel !== -1 ? currentLevel : loadLevel;
+      if (typeof data.level === 'number' && activeLevel !== -1 && data.level !== activeLevel) return;
+      // `wasLive`/the transition check always tracks the *manifest's own*
+      // signal, never the liveOpt:true override below - otherwise a forced-
+      // live stream could never report streamended once ENDLIST genuinely
+      // appears (liveOpt:true would keep masking it forever). The override
+      // only ever affects what's *reported* as isLive.
+      const manifestLive = !!data.details?.live;
+      if (this.wasLive && !manifestLive) this.streamEndedCallback?.();
+      this.wasLive = manifestLive;
+      this.liveCallback?.(this.liveOpt === true || manifestLive, normalizeLiveDate(this.hls.playingDate), this.computeLiveEdgeOffset());
+    };
+    this.hls.on(this.Hls.Events.LEVEL_LOADED, this.levelLoadedHandler);
+  }
+
   private applyLoad(src: string) {
     if (this.Hls?.isSupported()) {
       this.usingNativeFallback = false;
       this.nativeLive?.off();
       this.nativeLive = undefined;
+      this.bindLevelLoaded();
       this.hls.loadSource(src);
     } else if (this.nativeEl.canPlayType("application/vnd.apple.mpegurl")) {
       // No MSE here - the browser itself fetches the manifest/segments
