@@ -63,6 +63,40 @@ describe('watchNativeLive (ADR-0001 D5)', () => {
     expect(report).toHaveBeenCalledWith(true, new Date('2026-01-01T00:00:10Z'), 2);
   });
 
+  // result-cycle3.md, defect 2 - getStartDate() returns an Invalid Date
+  // (never undefined) when Safari doesn't have a wallclock anchor yet;
+  // `+start` alone would poison the computed playheadDate into another
+  // Invalid Date instead of surfacing as `null`.
+  it('playheadDate is null (not Invalid Date) when getStartDate() itself is invalid', () => {
+    const el = video();
+    (el as any).getStartDate = () => new Date(NaN);
+    Object.defineProperty(el, 'currentTime', { configurable: true, value: 10 });
+    const report = jest.fn();
+    watchNativeLive(el, 'auto', report, jest.fn());
+
+    setDuration(el, Infinity);
+    el.dispatchEvent(new Event('durationchange'));
+
+    expect(report).toHaveBeenCalledWith(true, null, 2);
+  });
+
+  // result-cycle3.md, defect 2 - currentTime can still be NaN this early
+  // (before the element has any buffered data), even with a valid
+  // getStartDate() - the arithmetic combining them must not leak NaN into a
+  // Date either.
+  it('playheadDate is null (not Invalid Date) when currentTime is NaN', () => {
+    const el = video();
+    (el as any).getStartDate = () => new Date('2026-01-01T00:00:00Z');
+    Object.defineProperty(el, 'currentTime', { configurable: true, value: NaN });
+    const report = jest.fn();
+    watchNativeLive(el, 'auto', report, jest.fn());
+
+    setDuration(el, Infinity);
+    el.dispatchEvent(new Event('durationchange'));
+
+    expect(report).toHaveBeenCalledWith(true, null, 2);
+  });
+
   it('ended() fires exactly once on the live -> non-live transition, not on later duration changes', () => {
     const el = video();
     const report = jest.fn();

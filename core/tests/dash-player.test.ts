@@ -684,3 +684,123 @@ describe('DashPlayer live (ADR-0001 D5)', () => {
     expect(onLiveChange).not.toHaveBeenCalled();
   });
 });
+
+// result-cycle3.md, defect 1 - a host that calls play() (or sets the native
+// `autoplay` attribute) before dash.js's PlaybackController has attached its
+// own native `play` listener silently disables the periodic MPD reload for
+// the rest of that session (see dash-player.ts's installPlayGuard()/
+// armAutoplayGuard()/releasePlayGuard() comments for the mechanism). These
+// are the unit-level proof that the guard itself defers/replays correctly;
+// e2e/tests/live.spec.ts proves the end-to-end consequence (autonomous
+// reload) against the real SDK.
+describe('DashPlayer play()/autoplay race guard (result-cycle3.md, defect 1)', () => {
+  afterEach(() => {
+    delete (window as any).dashjs;
+  });
+
+  it('defers a play() called before STREAM_INITIALIZED, replaying it once dash.js is actually listening', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    // The host calls play() in the same tick as load()/before core.ready -
+    // must not reach the native element yet.
+    const playPromise = nativeEl.play();
+    expect(originalPlay).not.toHaveBeenCalled();
+
+    handlers.streamInitialized(); // dash.js's own play listener is now attached
+
+    await playPromise;
+    expect(originalPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('a play() called after STREAM_INITIALIZED already fired passes straight through, unqueued', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    handlers.streamInitialized();
+
+    await nativeEl.play();
+
+    expect(originalPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('the native autoplay attribute is suppressed until STREAM_INITIALIZED, then replayed with no explicit play() call needed', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+    nativeEl.autoplay = true; // <video autoplay> / <ultra-media autoplay>
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    expect(nativeEl.autoplay).toBe(false); // suppressed - no uncontrolled native pre-ready autoplay
+    expect(originalPlay).not.toHaveBeenCalled();
+
+    handlers.streamInitialized();
+
+    expect(originalPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('an element with no autoplay attribute and no play() call is left untouched', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    handlers.streamInitialized();
+
+    expect(originalPlay).not.toHaveBeenCalled();
+    expect(nativeEl.autoplay).toBe(false);
+  });
+
+  it('destroy() before STREAM_INITIALIZED ever fires drops a queued play() instead of replaying it onto a torn-down element, and restores the native play()', async () => {
+    setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    const playPromise = nativeEl.play(); // queued - resolves immediately regardless (see guardPlay()'s comment)
+    player.destroy();
+
+    await expect(playPromise).resolves.toBeUndefined();
+    expect(originalPlay).not.toHaveBeenCalled(); // never actually reached the (now torn-down) element
+
+    // wrapper undone - a reused <video> starts clean, calling straight
+    // through to the real native play() (bound, so not reference-equal to
+    // the mock itself).
+    nativeEl.play();
+    expect(originalPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('a fatal error before STREAM_INITIALIZED also releases a queued play(), invoking the real native play()', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    player.onError(() => {});
+
+    const playPromise = nativeEl.play();
+    handlers.error({ error: { code: 25, message: 'manifest 404' } }); // DOWNLOAD_ERROR_ID_MANIFEST_CODE - fatal
+
+    await expect(playPromise).resolves.toBeUndefined();
+    expect(originalPlay).toHaveBeenCalledTimes(1);
+  });
+});
