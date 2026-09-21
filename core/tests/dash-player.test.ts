@@ -987,3 +987,59 @@ describe('DashPlayer play() guard: never left armed', () => {
     expect(nativeEl.play).toBe(adSdkPlay);
   });
 });
+
+describe('DashPlayer play() guard: closing review leftovers', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    delete (window as any).dashjs;
+  });
+
+  it('a successive load() restarts the watchdog instead of inheriting the previous load\'s deadline', async () => {
+    jest.useFakeTimers();
+    setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    player.load('https://example.com/a.mpd');
+    nativeEl.play().catch(() => {});
+
+    jest.advanceTimersByTime(14900);
+    player.load('https://example.com/b.mpd'); // still armed: the deadline must start over
+    jest.advanceTimersByTime(200);
+    expect(realPlay).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(15000);
+    expect(realPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('a fatal native <video> error releases the guard right away', async () => {
+    setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    player.onError(jest.fn());
+    nativeEl.play().catch(() => {});
+
+    Object.defineProperty(nativeEl, 'error', { value: fakeMediaError(3, 'decode failed'), configurable: true });
+    nativeEl.dispatchEvent(new Event('error'));
+
+    expect(nativeEl.play).toBe(realPlay);
+  });
+
+  it('a fatal dash.js error releases the guard even when the host registered no onError', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    nativeEl.play().catch(() => {});
+
+    handlers.error({ error: { code: DASHJS_ERRORS.DOWNLOAD_ERROR_ID_MANIFEST_CODE, message: 'manifest 404' } });
+
+    expect(nativeEl.play).toBe(realPlay);
+  });
+});

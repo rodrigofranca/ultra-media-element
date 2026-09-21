@@ -31,7 +31,10 @@ export class PlayGuard {
   constructor(private media: HTMLMediaElement, private watchdogMs = 15000) {}
 
   arm(): void {
-    if (this.armed) return;
+    if (this.armed) {
+      this.startWatchdog(); // a new load while still armed gets a full deadline of its own
+      return;
+    }
     this.armed = true;
     const media = this.media;
     this.own.play = Object.getOwnPropertyDescriptor(media, 'play');
@@ -57,6 +60,14 @@ export class PlayGuard {
       this.settle(abortError());
       realPause.call(media);
     });
+    this.startWatchdog();
+  }
+
+  // Liveness barrier, not a fix: if it fires before the engine is listening
+  // (a live stream taking longer than this to initialize), the original race
+  // is back for that one load - degraded refresh, but never a hung play().
+  private startWatchdog(): void {
+    if (this.watchdog !== null) clearTimeout(this.watchdog);
     this.watchdog = setTimeout(() => this.release(true), this.watchdogMs);
   }
 

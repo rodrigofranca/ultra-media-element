@@ -186,7 +186,7 @@ export class DashPlayer implements IMediaPlayer {
     this.player.addRequestInterceptor(this.requestInterceptor);
 
     this.player.on(this.dashjs.MediaPlayer.events.ERROR, (e: any) => {
-      if (this.errorCallback) {
+      {
         const err = e.error ?? {};
         const code: number | null = typeof err.code === 'number' ? err.code : null;
 
@@ -204,7 +204,11 @@ export class DashPlayer implements IMediaPlayer {
         const data = err.data ?? {};
         const errors = this.dashjs.MediaPlayer.errors;
         const fatal = !isDashErrorRecoverable(code, errors);
-        this.errorCallback({
+        // Release first, and regardless of whether the host listens for
+        // errors (onError is optional): a fatal error means no
+        // STREAM_INITIALIZED is coming for this load.
+        if (fatal) this.playGuard.release(true);
+        this.errorCallback?.({
           fatal,
           category: categorizeDashError(code, errors),
           code: code != null ? String(code) : 'unknown',
@@ -214,7 +218,6 @@ export class DashPlayer implements IMediaPlayer {
           status: data.response?.status,
           cause: err,
         });
-        if (fatal) this.playGuard.release(true); // don't leave a queued play() hanging
       }
     });
 
@@ -298,9 +301,9 @@ export class DashPlayer implements IMediaPlayer {
     this.nativeErrorHandler = () => {
       // No MediaError = a stale event for a source a newer load superseded
       // (the load algorithm resets `error` to null) - not this load's.
-      if (this.errorCallback && this.nativeEl.error) {
-        this.errorCallback(mapNativeMediaError(this.nativeEl.error, 'dash.js', this.pendingSrc ?? this.nativeEl.currentSrc));
-      }
+      if (!this.nativeEl.error) return;
+      this.playGuard.release(true); // a native MediaError is terminal for this load
+      this.errorCallback?.(mapNativeMediaError(this.nativeEl.error, 'dash.js', this.pendingSrc ?? this.nativeEl.currentSrc));
     };
     this.nativeEl.addEventListener('error', this.nativeErrorHandler);
 
