@@ -1,3 +1,4 @@
+import { PlayGuard } from "./play-guard";
 import type { IMediaPlayer, MediaTracks, MediaPlayerError, MediaErrorCategory } from "../core/media-player";
 import type { RequestContext, RequestPolicy } from "../core/request-policy";
 import { applyRequestPolicy } from "../core/apply-request-policy";
@@ -135,40 +136,29 @@ export class DashPlayer implements IMediaPlayer {
   private streamEndedCallback?: () => void;
   private wasLive = false;
 
-  private originalPlay: (() => Promise<void>) | null = null;
-  private pendingPlay = false; // result-cycle3.md, defect 1
+  private playGuard: PlayGuard;
 
   constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy, private liveOpt?: boolean | 'auto') {
     log("Powered by Dash.js");
     this.nativeEl = element;
+    this.playGuard = new PlayGuard(element);
     this.requestPolicy = requestPolicy;
     this.onReady = new Promise((resolve, reject) => {
       this.setup().then(resolve).catch(reject);
     });
   }
 
-  private guardPlay(): void {
-    this.originalPlay = this.nativeEl.play.bind(this.nativeEl);
-    if (this.nativeEl.autoplay) {
-      this.pendingPlay = true;
-      this.nativeEl.autoplay = false;
-    }
-    this.nativeEl.play = (): Promise<void> => {
-      this.pendingPlay = true;
-      return Promise.resolve();
-    };
-  }
-
-  private releasePlay(invoke: boolean): void {
-    if (!this.originalPlay) return;
-    const play = this.originalPlay;
-    this.originalPlay = null;
-    this.nativeEl.play = play;
-    if (invoke && this.pendingPlay) play().catch(() => {});
-  }
-
   private async setup() {
-    this.guardPlay();
+    this.playGuard.arm();
+    try {
+      await this.setupPlayer();
+    } catch (error) {
+      this.playGuard.release(false); // never leave the host's <video> patched
+      throw error;
+    }
+  }
+
+  private async setupPlayer() {
 
     if (isUndefined(this.dashjs)) {
       this.dashjs = await loadSDK(this.sdkSrc, 'dashjs');
@@ -224,7 +214,7 @@ export class DashPlayer implements IMediaPlayer {
           status: data.response?.status,
           cause: err,
         });
-        if (fatal) this.releasePlay(true); // don't leave a queued play() hanging
+        if (fatal) this.playGuard.release(true); // don't leave a queued play() hanging
       }
     });
 
@@ -262,7 +252,7 @@ export class DashPlayer implements IMediaPlayer {
         this.tracksChangeCallback(tracks);
       }
       reportLive();
-      this.releasePlay(true); // result-cycle3.md, defect 1
+      this.playGuard.release(true); // result-cycle3.md, defect 1
     });
 
     // ADR-0001 D5 - PLAYBACK_TIME_UPDATED (public event, fires on every
@@ -384,12 +374,16 @@ export class DashPlayer implements IMediaPlayer {
     this.liveOpt = live; // result-cycle2.md, defect 4
     this.wasLive = false;
     if (this.destroyed || !this.player) return;
+    // dash.js tears down and re-attaches its native `play` listener for
+    // every source (reset -> PlaybackController.initialize()), so the same
+    // race reopens on each load() of a reused player.
+    this.playGuard.arm();
     this.applyLoad(src);
   }
 
   destroy() {
     this.destroyed = true;
-    this.releasePlay(false);
+    this.playGuard.release(false);
 
     if (this.nativeErrorHandler) {
       this.nativeEl.removeEventListener('error', this.nativeErrorHandler);
