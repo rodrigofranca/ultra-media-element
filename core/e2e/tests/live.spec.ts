@@ -397,6 +397,132 @@ test.describe('headless core: live (ADR-0001 D5)', () => {
   }
 });
 
+/**
+ * result-cycle3.md, defect 1 - the news-portal host this ships to first
+ * calls `play()` immediately (or sets the native `autoplay` attribute) -
+ * *before* waiting for the first `livechange` this file's other DASH specs
+ * deliberately wait for (see the header comment above). dash.js 5.2.1's
+ * PlaybackController only attaches its own native `play` listener once the
+ * manifest is fetched and the stream composed
+ * (`StreamController._switchStream()` -> `playbackController.initialize()`,
+ * dash.all.debug.js ~50650); that listener is the *only* thing that fires
+ * the one-time PLAYBACK_STARTED event ManifestUpdater's periodic MPD reload
+ * is gated on (`isPaused` starts `true`, flipped only by PLAYBACK_STARTED -
+ * ManifestUpdater's resetInitialSettings()/_onPlaybackStarted(),
+ * ~34062-34105/34269). Calling play() (or letting the browser's own
+ * autoplay algorithm call it) before that attachment fires the native
+ * `play` event to nobody - it never fires again once the element is no
+ * longer paused, so the periodic reload never starts for the rest of the
+ * session. These specs reproduce that directly (no `livechange` wait), and
+ * must go green once dash-player.ts's play guard (installPlayGuard()/
+ * armAutoplayGuard()/releasePlayGuard()) exists.
+ */
+test.describe('defect 1 (cycle 3): immediate play()/autoplay must not stop the autonomous DASH MPD reload', () => {
+  test.describe.configure({ timeout: 30_000 });
+
+  async function countManifestRequests(page: Page, id: string): Promise<Request[]> {
+    const manifestPath = `/live/dash/${id}/live.mpd`;
+    const requests: Request[] = [];
+    page.on('request', (req) => {
+      if (new URL(req.url()).pathname === manifestPath) requests.push(req);
+    });
+    return requests;
+  }
+
+  test('headless core: play() called in the same tick as load() (no livechange wait)', async ({ page }, testInfo) => {
+    await gotoCoreOnlyPage(page);
+    const id = `race-play-${testInfo.testId}`;
+    const requests = await countManifestRequests(page, id);
+
+    await page.evaluate(async (src) => {
+      const video = document.querySelector('#video') as HTMLVideoElement;
+      const core = new (window as any).UltraMediaCore(video);
+      core.load(src);
+      // Deliberately not awaiting core.ready or the first livechange - the
+      // real-world race: an autoplay news player calls play() the instant
+      // it kicks off loading.
+      video.play().catch(() => {});
+      await new Promise((r) => setTimeout(r, 5000));
+    }, liveUrl('dash', id, EDGE_TEST_WINDOW));
+
+    // 1 initial fetch + >=3 autonomous reloads at the fixture's 1s minimumUpdatePeriod.
+    expect(requests.length).toBeGreaterThanOrEqual(4);
+  });
+
+  test('headless core: the native <video autoplay> attribute (set before load(), no explicit play())', async ({ page }, testInfo) => {
+    await gotoCoreOnlyPage(page);
+    const id = `race-autoplay-${testInfo.testId}`;
+    const requests = await countManifestRequests(page, id);
+
+    await page.evaluate(async (src) => {
+      const video = document.querySelector('#video') as HTMLVideoElement;
+      video.autoplay = true; // <video autoplay> - no explicit play() call at all
+      const core = new (window as any).UltraMediaCore(video);
+      core.load(src);
+      await new Promise((r) => setTimeout(r, 5000));
+    }, liveUrl('dash', id, EDGE_TEST_WINDOW));
+
+    expect(requests.length).toBeGreaterThanOrEqual(4);
+  });
+
+  test('element: play() called immediately after setting src (no livechange wait)', async ({ page }, testInfo) => {
+    await gotoPlayer(page);
+    await instrument(page);
+    const id = `race-el-play-${testInfo.testId}`;
+    const requests = await countManifestRequests(page, id);
+
+    await page.evaluate(() => document.querySelector('#player')!.setAttribute('live', ''));
+    await page.evaluate((src) => {
+      const el = document.querySelector('#player') as any;
+      el.setAttribute('src', src);
+      el.play().catch(() => {});
+    }, liveUrl('dash', id, EDGE_TEST_WINDOW));
+    await new Promise((r) => setTimeout(r, 5000));
+
+    expect(requests.length).toBeGreaterThanOrEqual(4);
+  });
+
+  test('element: the autoplay attribute present before src (<ultra-media autoplay muted src=...>)', async ({ page }, testInfo) => {
+    await gotoPlayer(page);
+    await instrument(page);
+    const id = `race-el-autoplay-${testInfo.testId}`;
+    const requests = await countManifestRequests(page, id);
+
+    await page.evaluate(() => {
+      const el = document.querySelector('#player')!;
+      el.setAttribute('live', '');
+      el.setAttribute('autoplay', ''); // present before src, like markup order
+    });
+    await setSrc(page, liveUrl('dash', id, EDGE_TEST_WINDOW));
+    await new Promise((r) => setTimeout(r, 5000));
+
+    expect(requests.length).toBeGreaterThanOrEqual(4);
+  });
+
+  // hls.js's own reload cadence isn't gated on the native `play` event at
+  // all (see this file's header comment) - proven directly here, not just
+  // assumed, since the brief asks for HLS evidence too.
+  test('hls: play() called in the same tick as load() does not stop the autonomous playlist reload (control - not a dash.js concern)', async ({ page }, testInfo) => {
+    await gotoCoreOnlyPage(page);
+    const id = `race-play-hls-${testInfo.testId}`;
+    const manifestPath = `/live/hls/${id}/live.m3u8`;
+    const requests: Request[] = [];
+    page.on('request', (req) => {
+      if (new URL(req.url()).pathname === manifestPath) requests.push(req);
+    });
+
+    await page.evaluate(async (src) => {
+      const video = document.querySelector('#video') as HTMLVideoElement;
+      const core = new (window as any).UltraMediaCore(video);
+      core.load(src);
+      video.play().catch(() => {});
+      await new Promise((r) => setTimeout(r, 4000));
+    }, liveUrl('hls', id, 3));
+
+    expect(requests.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
 test.describe('<ultra-media> element: live (ADR-0001 D5)', () => {
   test.describe.configure({ timeout: 40_000 });
 
