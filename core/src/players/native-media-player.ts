@@ -17,8 +17,9 @@ export class NativeMediaPlayer implements IMediaPlayer {
 
   constructor(protected element: HTMLMediaElement, private engine: string, private liveOpt?: boolean | 'auto') {}
 
-  load(src: string, requestPolicy?: RequestPolicy): void {
+  load(src: string, requestPolicy?: RequestPolicy, live?: boolean | 'auto'): void {
     const generation = ++this.loadGeneration;
+    this.liveOpt = live; // result-cycle2.md, defect 4
     this.live?.reset();
     this.element.src = applyNativeLoad(this.element, src, 'other', this.engine, requestPolicy, deferredGuardedReport(
       (e) => this.errorCallback?.(e),
@@ -26,7 +27,12 @@ export class NativeMediaPlayer implements IMediaPlayer {
     ), this.crossOriginState);
   }
 
-  onLiveChange(callback: (isLive: boolean, playheadDate: Date | null) => void): void {
+  onLiveChange(callback: (isLive: boolean, playheadDate: Date | null, liveEdgeOffsetSeconds?: number) => void): void {
+    // wireUp() calls onLiveChange() fresh on every load() (even a reused
+    // engine, e.g. mp4 -> mp4) - without off()ing the previous watch first,
+    // each such load() left its old durationchange/loadedmetadata/progress/
+    // timeupdate listeners attached, duplicating every future report.
+    this.live?.off();
     this.live = watchNativeLive(this.element, this.liveOpt, callback, () => this.streamEndedCallback?.());
   }
 

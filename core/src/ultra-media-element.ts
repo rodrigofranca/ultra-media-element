@@ -93,15 +93,14 @@ export class UltraMediaElement extends MediaTracksMixin(CustomVideoElement) {
   }
   // mediaTimeIsLive's own fallback (state-mediator.js) is `seekable.end -
   // liveEdgeOffset` with a *default 10s offset* - larger than a short DVR
-  // window, making "not live" unreachable by seeking back within it. Our
-  // own edge, 2s of tolerance behind seekableEnd (not an exact match -
-  // playback is essentially always at least a little behind the
-  // instantaneous edge: decode/buffering latency, the ~1s cadence a live
-  // window itself grows at - an exact match made this flicker false right
-  // after a real goToLive(), confirmed against a real browser).
+  // window, making "not live" unreachable by seeking back within it.
+  // `core.live.liveEdge` (result-cycle2.md, defect 8) is now itself the
+  // engine's real live-sync position (hls.js `liveSyncPosition`, dash.js's
+  // target-live-delay-derived edge, a documented native heuristic) - no
+  // separate flat offset needed here anymore.
   get liveEdgeStart(): number {
     const live = this.core?.live;
-    return live?.isLive ? live.seekableEnd - 2 : NaN;
+    return live?.isLive ? live.liveEdge : NaN;
   }
 
   // No HTML attribute for this (ADR-0001 D4) - headers carrying tokens
