@@ -299,27 +299,45 @@ Na casca, o atributo `live` faz o mesmo (`<ultra-media live src="...">`);
 `streamType`/`targetLiveWindow`/`liveEdgeStart`, que `state-mediator.js` lê).
 
 - `options.live`: `'auto'` (default) lê do manifesto (hls.js
-  `LEVEL_LOADED.details.live`, dash.js `isDynamic()`); `true` força
-  `isLive: true` sempre reportado (mas a *detecção* de `streamended`
-  continua olhando o sinal real do manifesto - um live forçado ainda
-  reporta o fim de verdade); `false` força `isLive: false` sempre.
+  `LEVEL_LOADED.details.live`, dash.js `isDynamic()`, e o fallback HLS
+  nativo via `duration === Infinity`); `true` força `isLive: true` sempre
+  reportado (mas a *detecção* de `streamended` continua olhando o sinal
+  real do manifesto - um live forçado ainda reporta o fim de verdade);
+  `false` força `isLive: false` sempre. `configure({ live })` (núcleo) ou
+  trocar o atributo `live` (casca) só valem a partir do **próximo**
+  `load()` - não reconfiguram um engine já carregado retroativamente.
 - A borda inicial ("abrir um live começa no vivo, não no início da janela")
   é comportamento **default** de hls.js/dash.js - nada aqui força isso.
 - `goToLive()`: hls.js usa `liveSyncPosition`; dash.js usa
   `seekToOriginalLive()`; nativo (mp4/mp3, e HLS nativo sem MSE) usa
   `seekable.end(last)`.
-- `dvr`: `seekableEnd - seekableStart > 30s` (limiar fixo - o núcleo não tem
-  a duração-alvo por segmento de cada engine para um limiar relativo).
+- `liveEdge`/`dvr`: proporcionais à distância normal até a borda de cada
+  engine (`liveEdgeOffsetSeconds` - hls.js `liveSyncPosition`/
+  `targetLatency`, dash.js `getTargetLiveDelay()`, heurística fixa de 2s no
+  fallback nativo), não um limiar fixo de 30s. `liveEdge = seekableEnd -
+  offset` (nunca abaixo de `seekableStart`); `dvr` fica `true` quando a
+  janela é significativamente maior que essa distância (`> 2x`, com piso de
+  30s). Ver "fórmulas de dvr/liveEdge" em `fronts/live/result-cycle2.md`.
+- `livechange` só dispara quando `isLive`/`dvr`/a janela mudam de forma
+  relevante (≥ 1s) - não a cada tick de reprodução. `playheadDate`/`latency`
+  são recalculados a cada leitura de `core.live` (getter), a partir do
+  último ponto de referência reportado pelo engine + quanto `currentTime`
+  andou desde então - não precisam de um evento novo para ficar em dia.
+- `core.live` é sempre um snapshot novo e congelado (`Object.freeze`) -
+  mutar um snapshot (ou seu `playheadDate`) nunca vaza para outro nem para
+  o estado do núcleo. Toda `load()` (mesmo reaproveitando o engine, mesma
+  formato) e todo `destroy()` voltam o estado a neutro primeiro.
 - `streamended` vs `error`: fica `streamended` quando o manifesto sinaliza o
   fim de forma explícita (ENDLIST do HLS / MPD `dynamic` → `static` do
-  DASH); um 404 terminal no manifesto continua `error` fatal, mesmo que a
-  causa real tenha sido a transmissão terminando - não há como distinguir
-  as duas coisas de forma confiável só pelo HTTP.
-- Engines sem suporte: YouTube (`isLive` sempre `false` - fora de escopo);
-  fallback HLS nativo sem MSE (Safari/TVs antigas) não implementa live
-  (gap conhecido, ver `fronts/live/result.md`).
-- `latency` (do tipo `LiveInfo`) não é calculado - hosts que precisarem
-  podem fazer `core.live.seekableEnd - core.media.currentTime`.
+  DASH, distinguindo a rendition/nível ativo de qualquer outro que o hls.js
+  esteja carregando em paralelo); um 404 terminal no manifesto continua
+  `error` fatal, mesmo que a causa real tenha sido a transmissão
+  terminando - não há como distinguir as duas coisas de forma confiável só
+  pelo HTTP.
+- Engines com suporte completo: hls.js, dash.js **e o fallback HLS nativo
+  sem MSE** (Safari/Smart TVs antigas - via a mesma detecção nativa do
+  mp4/mp3). Sem suporte: YouTube (`isLive` sempre `false` - fora de
+  escopo).
 
 ---
 

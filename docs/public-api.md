@@ -189,29 +189,28 @@ ganhou:
 
 ```ts
 interface LiveInfo {
-  isLive: boolean;
-  seekableStart: number;
-  seekableEnd: number;
-  liveEdge: number;       // === seekableEnd (simplificação documentada, ver result.md)
-  dvr: boolean;           // seekableEnd - seekableStart > 30s (limiar fixo, ver result.md)
-  latency?: number;       // não implementado (custo de tamanho) - hosts podem calcular seekableEnd - currentTime
-  playheadDate: Date | null;
+  readonly isLive: boolean;
+  readonly seekableStart: number;
+  readonly seekableEnd: number;
+  readonly liveEdge: number;     // borda de sincronismo real do engine (hls.js liveSyncPosition, dash.js target live delay) - ver "critério de dvr/liveEdge" em result-cycle2.md
+  readonly dvr: boolean;         // janela > max(30s, 2x a distância normal até a borda) - ver result-cycle2.md
+  readonly latency?: number;     // segundos que currentTime está atrás de liveEdge - lido sob demanda (getter), não dispara evento
+  readonly playheadDate: Date | null; // idem - recalculado a cada leitura de core.live
 }
-UltraMediaCoreOptions.live?: boolean | 'auto';  // default 'auto'
-core.live: LiveInfo;                            // snapshot imutável, atualizado com 'livechange'
+UltraMediaCoreOptions.live?: boolean | 'auto';  // default 'auto'; configure({ live }) só vale a partir do próximo load()
+core.live: LiveInfo;             // getter - snapshot novo e congelado (Object.freeze) a cada leitura, nunca compartilhado
 core.goToLive(): void;
-eventos: 'livechange' (detail: LiveInfo), 'streamended' (sem detail)
+eventos: 'livechange' (detail: LiveInfo, só quando isLive/dvr/janela mudam de forma relevante - ver result-cycle2.md), 'streamended' (sem detail)
 ```
 
-Matriz engine × capacidade (ver `fronts/live/result.md` para a evidência
-completa): hls.js e dash.js implementam isLive/borda inicial/goToLive/dvr/
-playheadDate/streamended via a própria SDK (`LEVEL_LOADED`/`isDynamic()`);
-nativo (mp4/mp3) via `duration === Infinity`; YouTube sempre `isLive: false`
-(fora de escopo). A borda inicial (hls.js `liveSyncPosition`, dash.js seu
-próprio delay de live) é comportamento **default** das duas SDKs — nenhum
-código próprio força isso. **Desvio conhecido**: o fallback HLS nativo sem
-MSE (Safari/TVs antigas) não implementa live (ver `hls-player.ts`'s
-`goToLive()`).
+Matriz engine × capacidade (ver `fronts/live/result-cycle2.md` para a
+evidência completa): hls.js, dash.js **e o fallback HLS nativo sem MSE
+(Safari/Smart TVs antigas)** implementam isLive/borda inicial/goToLive/dvr/
+playheadDate/streamended; nativo (mp4/mp3) via `duration === Infinity`;
+YouTube sempre `isLive: false` (fora de escopo). A borda inicial (hls.js
+`liveSyncPosition`, dash.js seu próprio delay de live, heurística
+documentada no fallback nativo) é o que `core.live.liveEdge` reporta e o
+que `goToLive()` mira nos engines que expõem uma posição própria.
 
 Na casca: `live` (atributo), `isLive`/`liveInfo`/`goToLive()` (mirror do
 core), e `streamType`/`targetLiveWindow`/`liveEdgeStart` (compatibilidade
