@@ -935,3 +935,55 @@ describe('DashPlayer play() guard: promise semantics, pause, restore, reuse', ()
     expect(nativeEl.play).toBe(realPlay);
   });
 });
+
+describe('DashPlayer play() guard: never left armed', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    delete (window as any).dashjs;
+  });
+
+  it('releases (and plays) if attachSource() throws on a reused player', async () => {
+    const { handlers, mockPlayerInstance } = setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    player.load('https://example.com/a.mpd');
+    handlers.streamInitialized();
+
+    mockPlayerInstance.attachSource.mockImplementationOnce(() => { throw new Error('bad url'); });
+    expect(() => player.load('::bad::')).not.toThrow();
+    expect(nativeEl.play).toBe(realPlay);
+  });
+
+  it('a watchdog releases the guard if dash.js never reports STREAM_INITIALIZED nor an error', async () => {
+    jest.useFakeTimers();
+    setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    const outcome = nativeEl.play().then(() => 'resolved', (e: any) => e.name);
+    expect(realPlay).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(15000);
+    expect(await outcome).toBe('resolved'); // never a play() hanging forever
+    expect(realPlay).toHaveBeenCalledTimes(1);
+    expect(nativeEl.play).toBe(realPlay);
+  });
+
+  it('leaves a play/pause override installed by someone else AFTER arming (e.g. an ad SDK) untouched on release', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    const adSdkPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = adSdkPlay; // installed while we are armed
+    handlers.streamInitialized();
+
+    expect(nativeEl.play).toBe(adSdkPlay);
+  });
+});

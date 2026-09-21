@@ -310,7 +310,23 @@ export class DashPlayer implements IMediaPlayer {
   }
 
   private applyLoad(src: string) {
-    this.player.attachSource(src);
+    try {
+      this.player.attachSource(src);
+    } catch (cause) {
+      // No STREAM_INITIALIZED/ERROR will follow a source dash.js rejected
+      // synchronously - don't leave the host's <video> guarded, and report
+      // it like any other fatal load failure.
+      this.playGuard.release(true);
+      this.errorCallback?.({
+        fatal: true,
+        category: 'otherError',
+        code: 'SOURCE_REJECTED',
+        message: (cause as Error)?.message || 'dash.js rejected the source',
+        engine: 'dash.js',
+        url: src,
+        cause,
+      });
+    }
   }
 
   onTracksChange(callback: (tracks: MediaTracks) => void) {
