@@ -105,22 +105,28 @@ function buildHlsPlaylist(id, state) {
   return lines.join('\n') + '\n';
 }
 
-// DASH doesn't reuse HLS's reload-counter sliding window: dash.js 5.2.1
-// (confirmed empirically against this harness, real Chromium) never
-// scheduled ManifestUpdater's periodic refresh timer for a SegmentTimeline-
-// described dynamic MPD in this setup (minimumUpdatePeriod present and
-// correctly parsed, DurationMatcher confirmed by reading
-// dist/modern/umd/dash.all.debug.js - the scheduling call simply never
-// fired) - playback stalled once it caught up to the declared timeline. A
-// plain `duration`-based SegmentTemplate (no SegmentTimeline) sidesteps
-// this entirely: dash.js computes which segment numbers exist itself, from
-// `availabilityStartTime` + real elapsed time, needing no manifest reload
-// for new segment numbers to become known. `availabilityStartTime` is
-// anchored `window` seconds into the past (real wallclock, captured once
-// per stream in stateFor()) so numbers/presentation time stay small and a
-// window's worth of content is available immediately - see result.md
-// "fixture live" for the full writeup, including that this makes DASH's
-// clock real-time-relative where HLS's stays purely request-count-driven.
+// DASH doesn't reuse HLS's reload-counter sliding window - a different
+// design choice, not a workaround: dash.js *does* reload a dynamic MPD
+// autonomously on its own `minimumUpdatePeriod` timer (proven in
+// e2e/tests/live.spec.ts's "reloads live.mpd autonomously" and "ending the
+// broadcast... via a real autonomous reload" specs) - ciclo 1's conclusion
+// that it didn't was wrong (result-cycle2.md, defect 9): the real cause was
+// calling `video.play()` before dash.js's PlaybackController had attached
+// its own native `play` listener (only done once the manifest is parsed),
+// silently missing the one-time PLAYBACK_STARTED signal ManifestUpdater's
+// first `startManifestRefreshTimer()` call is gated on - see
+// e2e/tests/live.spec.ts's header comment for the full mechanism. A plain
+// `duration`-based SegmentTemplate (no SegmentTimeline) is used here for an
+// unrelated, still-valid reason: dash.js computes which segment numbers
+// exist itself, from `availabilityStartTime` + real elapsed time, so
+// segment availability never depends on a reload actually having happened
+// yet - handy for a synthetic fixture where the reload cadence is the thing
+// being tested. `availabilityStartTime` is anchored `window` seconds into
+// the past (real wallclock, captured once per stream in stateFor()) so
+// numbers/presentation time stay small and a window's worth of content is
+// available immediately - see result-cycle2.md "fixture DASH" for the full
+// writeup, including that this makes DASH's clock real-time-relative where
+// HLS's stays purely request-count-driven.
 function buildDashMpd(id, state) {
   const dynamic = !state.ended;
   const nowMs = dynamic ? Date.now() : state.dashEndedAtMs;

@@ -13,17 +13,19 @@ import { gotoPlayer, setSrc, getLog, instrument, getProp, callMethod } from '../
  * request-count-driven and deterministic: EPOCH_BASE_MS below mirrors it
  * exactly, and playheadDate assertions check that precise formula.
  *
- * dash.js 5.2.1 did not, in this harness (confirmed empirically - see
- * live-fixture.mjs's buildDashMpd() comment), reliably re-fetch a dynamic
- * MPD on its own `minimumUpdatePeriod` timer; the DASH route instead uses a
- * plain `duration`-based SegmentTemplate anchored to *real* wallclock
- * (`availabilityStartTime`), needing no reload for new segments to become
- * known. Two consequences for the specs below: DASH's playheadDate is
- * checked against real `Date.now()` (generous tolerance), not
- * EPOCH_BASE_MS; and DASH's "ending the broadcast" spec reloads the source
- * explicitly after calling the control endpoint (a host that ends a live
- * event out-of-band and re-initializes playback), rather than waiting for
- * an autonomous reload that wasn't observed to happen here.
+ * dash.js 5.2.1 *also* reloads a dynamic MPD autonomously on its own
+ * `minimumUpdatePeriod` timer, proven below - ciclo 1's conclusion that it
+ * didn't was wrong (result-cycle2.md, defect 9): the actual cause was
+ * calling `video.play()` immediately after `core.ready`, before dash.js's
+ * PlaybackController had attached its own native `play` listener (see
+ * this file's "waitForFirstLive" comment below) - the fixture's MPD was
+ * never the problem, and the DASH route still uses a `duration`-based
+ * SegmentTemplate anchored to real wallclock (`availabilityStartTime`) for
+ * an unrelated reason: it makes segment availability computable without
+ * *needing* a reload, which is what let ciclo 1's specs pass despite the
+ * reload never actually happening. DASH's playheadDate is still checked
+ * against real `Date.now()` (generous tolerance), not EPOCH_BASE_MS - its
+ * clock is real-wallclock-relative, HLS's is purely request-count-driven.
  */
 const EPOCH_BASE_MS = Date.UTC(2026, 0, 1, 0, 0, 0); // HLS only
 
@@ -48,22 +50,56 @@ function assertPlayheadDate(engine: 'hls' | 'dash', playheadDate: string, curren
 }
 
 /**
- * HLS's live-fixture window is capped at a fixed segment count (see
- * live-fixture.mjs's windowSegments()), so "closer to the end than the
- * start of that fixed range" is a stable, meaningful check. DASH's window
- * (buildDashMpd()) is wallclock-relative and keeps growing for as long as
- * the test waits - "the midpoint" is a moving target there, so the
- * meaningful check instead is that the *live latency* (how far currentTime
- * trails the ever-advancing edge) stays small and bounded, exactly what a
- * real live player's own safety buffer looks like.
+ * result-cycle2.md, defect 10 - the old version of this check ("past the
+ * midpoint of the window") accepted any position in the back half of the
+ * window, not just the real live-sync position. `core.live.liveEdge`
+ * (defect 8) is now itself that real position (hls.js `liveSyncPosition`,
+ * dash.js's target-live-delay-derived edge) - assert *that*, with a
+ * tolerance, and separately that it's clearly away from `seekableStart` so
+ * the two can't be confused (needs a DVR window long enough that the start
+ * and the edge aren't already close together - see EDGE_TEST_WINDOW below).
  */
-function assertNearEdge(engine: 'hls' | 'dash', currentTime: number, live: { seekableStart: number; seekableEnd: number }): void {
-  if (engine === 'hls') {
-    expect(currentTime).toBeGreaterThan((live.seekableStart + live.seekableEnd) / 2);
-  } else {
-    expect(live.seekableEnd - currentTime).toBeLessThan(9);
-  }
+function assertNearEdge(engine: 'hls' | 'dash', currentTime: number, live: { seekableStart: number; seekableEnd: number; liveEdge: number }): void {
+  const tolerance = engine === 'hls' ? 2.5 : 6; // dash's window is wallclock-relative and keeps advancing during the assertion itself
+  expect(Math.abs(currentTime - live.liveEdge)).toBeLessThan(tolerance);
+  // The live-sync position itself is meaningfully away from the start of
+  // the window - a structural property of the fixture/formula, not of
+  // playback timing, so it can't flake the way asserting against the
+  // (jittery) actual currentTime would.
+  expect(live.liveEdge).toBeGreaterThan(live.seekableStart + 1);
 }
+
+// 8s: comfortably above hls.js's live-sync distance (~3s here - see
+// computeLiveEdgeOffset()) and dash.js's target live delay, so the edge and
+// the start of the window stay clearly distinguishable (result-cycle2.md,
+// defect 10). A much longer window was tried and made dash.js's initial
+// buffering stall indefinitely in this synthetic 1s-segment harness - not
+// a live/dvr defect, a harness-capacity limit, so left alone.
+const EDGE_TEST_WINDOW = 8;
+
+/**
+ * result-cycle2.md, defect 9 - dash.js's PlaybackController only attaches
+ * its own native `play` listener once the manifest has been fetched and
+ * parsed (StreamController -> PlaybackController.initialize(), confirmed by
+ * reading dist/modern/umd/dash.all.debug.js); that listener is what fires
+ * the *one-time* PLAYBACK_STARTED event ManifestUpdater's periodic-reload
+ * timer is gated on (isPaused starts `true` and is only ever flipped by
+ * PLAYBACK_STARTED - see ManifestUpdater's resetInitialSettings()/
+ * _onPlaybackStarted()). Calling `video.play()` immediately after
+ * `core.ready` - before that attachment happens - fires the native `play`
+ * event to nobody; since a `play` event only fires again on a genuine
+ * paused->playing transition, the periodic reload then never starts for
+ * that whole session. This is *not* an hls.js concern (its own reload
+ * cadence isn't gated on the native `play` event), so this wait is DASH-
+ * specific, but applied to both engines below for one consistent call
+ * pattern - it's a no-op wait for hls.js (already live on the first
+ * report). This was ciclo 1's actual bug, misdiagnosed there as "dash.js
+ * doesn't reload dynamic MPDs" (see result-cycle2.md "Descobertas").
+ *
+ * Each in-page script below inlines this as:
+ *   if (!core.live.isLive) await new Promise((r) => core.addEventListener('livechange', function once() { core.removeEventListener('livechange', once); r(); }));
+ * right after `await core.ready`, before calling `video.play()`.
+ */
 
 const ENGINES = ['hls', 'dash'] as const;
 
@@ -80,6 +116,17 @@ test.describe('headless core: live (ADR-0001 D5)', () => {
         const core = new (window as any).UltraMediaCore(video); // 'auto' - proves real manifest-driven detection
         core.load(src);
         await core.ready;
+        // result-cycle2.md, defect 9 - wait for the engine's first live
+        // report before calling play(): calling it any earlier can race
+        // past dash.js's own native 'play' listener attachment, silently
+        // disabling its periodic manifest reload for the rest of the
+        // session (see this file's header comment).
+        if (!core.live.isLive) {
+          await new Promise<void>((r) => core.addEventListener('livechange', function once() {
+            core.removeEventListener('livechange', once);
+            r();
+          }));
+        }
         await video.play();
 
         // Enough real time for playback to progress into the buffered
@@ -100,13 +147,13 @@ test.describe('headless core: live (ADR-0001 D5)', () => {
         const afterGoToLive = video.currentTime;
 
         return { openedAt, openedLive, afterSeekBack, afterGoToLive };
-      }, { src: liveUrl(engine, id, 8), warmupMs: engine === 'dash' ? 6000 : 3000 });
+      }, { src: liveUrl(engine, id, EDGE_TEST_WINDOW), warmupMs: engine === 'dash' ? 6000 : 3000 });
 
-      // Opens closer to the live edge than to the start of the window.
+      // Opens near the real live-sync position, clearly away from the start.
       assertNearEdge(engine, result.openedAt, result.openedLive);
 
       expect(result.openedLive.isLive).toBe(true);
-      expect(result.openedLive.dvr).toBe(false); // 8s window, under the 30s threshold
+      expect(result.openedLive.dvr).toBe(false); // 8s window, under max(30, 2x offset)
       expect(result.openedLive.seekableEnd).toBeGreaterThan(result.openedLive.seekableStart);
 
       assertPlayheadDate(engine, result.openedLive.playheadDate, result.openedAt);
@@ -177,22 +224,97 @@ test.describe('headless core: live (ADR-0001 D5)', () => {
         expect(events.filter((e) => e === 'error')).toHaveLength(0);
       });
     } else {
-      // Descoberta (see result.md "fixture live"): dash.js 5.2.1 never
-      // autonomously re-fetched a dynamic MPD in this harness (confirmed:
-      // 0 reloads observed over 16s of real playback with
-      // minimumUpdatePeriod="PT1S" declared and correctly parsed), so the
-      // live -> static *transition* within one continuous playback session
-      // can't be driven through a real browser here - only proven at the
-      // unit level (dash-player.test.ts, mocked DYNAMIC_TO_STATIC). This
-      // spec instead proves the other half through the real SDK end to
-      // end: a stream the control endpoint already ended loads as
-      // isLive:false (dash.js's real isDynamic() on a real static MPD),
-      // with no error - core.load()/DashPlayer.load() deliberately reset
-      // `wasLive` to false on every load() (ADR-0001 D5 - "volta ao estado
-      // neutro... troca de fonte"), which is exactly what makes a same-
-      // session transition unobservable without an autonomous reload.
-      test('dash: a manifest that already ended loads as isLive:false via the real SDK, with no error', async ({ page }, testInfo) => {
+      // result-cycle2.md, defect 9 - ciclo 1 concluded "dash.js 5.2.1 never
+      // autonomously re-fetches a dynamic MPD in this harness"; wrong, and
+      // for a mundane reason: those specs called `video.play()` immediately
+      // after `core.ready`, racing past dash.js's own native `play`
+      // listener attachment (see this file's header comment) - the
+      // fixture's MPD was never the problem. Waiting for the first live
+      // report before calling play() is enough for the real SDK to reload
+      // it autonomously, headers included, and to reach DYNAMIC_TO_STATIC
+      // through a genuine reload - proven below.
+      test('dash: reloads live.mpd autonomously multiple times, every reload carrying the request policy header', async ({ page }, testInfo) => {
+        await gotoCoreOnlyPage(page);
+        const id = `reload-${testInfo.testId}`;
+        const manifestPath = `/live/dash/${id}/live.mpd`;
+
+        const requests: Request[] = [];
+        page.on('request', (req) => {
+          if (new URL(req.url()).pathname === manifestPath) requests.push(req);
+        });
+
+        await page.evaluate(async ({ src }) => {
+          const video = document.querySelector('#video') as HTMLVideoElement;
+          const core = new (window as any).UltraMediaCore(video, {
+            request: { headers: { Authorization: 'Bearer live-token' } },
+          });
+          core.load(src);
+          await core.ready;
+          if (!core.live.isLive) {
+            await new Promise<void>((r) => core.addEventListener('livechange', function once() {
+              core.removeEventListener('livechange', once);
+              r();
+            }));
+          }
+          await video.play();
+          await new Promise((r) => setTimeout(r, 5000));
+        }, { src: liveUrl('dash', id, 8) });
+
+        // (a) multiple autonomous reloads (the first fetch plus at least 2 more).
+        expect(requests.length).toBeGreaterThanOrEqual(3);
+        // (b) every one of them carries the configured header, not just the first.
+        const withHeader = requests.filter((r) => r.headers()['authorization'] === 'Bearer live-token');
+        expect(withHeader).toHaveLength(requests.length);
+      });
+
+      test('dash: ending the broadcast fires exactly one streamended via a real autonomous reload (DYNAMIC_TO_STATIC), no error', async ({ page }, testInfo) => {
+        await gotoCoreOnlyPage(page);
         const id = `end-${testInfo.testId}`;
+        const manifestPath = `/live/dash/${id}/live.mpd`;
+
+        const requests: Request[] = [];
+        page.on('request', (req) => {
+          if (new URL(req.url()).pathname === manifestPath) requests.push(req);
+        });
+
+        const events = await page.evaluate(async ({ src, endUrl }) => {
+          const video = document.querySelector('#video') as HTMLVideoElement;
+          const core = new (window as any).UltraMediaCore(video);
+          const log: string[] = [];
+          core.addEventListener('streamended', () => log.push('streamended'));
+          core.addEventListener('error', () => log.push('error'));
+          core.load(src);
+          await core.ready;
+          if (!core.live.isLive) {
+            await new Promise<void>((r) => core.addEventListener('livechange', function once() {
+              core.removeEventListener('livechange', once);
+              r();
+            }));
+          }
+          await video.play();
+
+          await new Promise((r) => setTimeout(r, 4000)); // a couple of autonomous reloads while live
+          await fetch(endUrl);
+          // dash.js needs at least one more autonomous reload (~1s cadence)
+          // to see the dynamic->static transition on its own.
+          await new Promise((r) => setTimeout(r, 4000));
+
+          return log;
+        }, { src: liveUrl('dash', id, 8), endUrl: `/live/control/${id}/end` });
+
+        // (c) the transition came from a real reload, not a same-session
+        // shortcut - proven by the manifest having actually been fetched
+        // again after the control endpoint ended the stream.
+        expect(requests.length).toBeGreaterThanOrEqual(3);
+        expect(events.filter((e) => e === 'streamended')).toHaveLength(1);
+        expect(events.filter((e) => e === 'error')).toHaveLength(0);
+      });
+
+      // A separate, still-valid scenario: loading a manifest that was
+      // already ended *before* this session ever started (a host
+      // reinitializing playback against a VOD-ified past broadcast).
+      test('dash: a manifest that already ended loads as isLive:false via the real SDK, with no error', async ({ page }, testInfo) => {
+        const id = `end-preloaded-${testInfo.testId}`;
         await page.request.get(liveUrl('dash', id, 3)); // instantiates stream state
         await page.request.get(`/live/control/${id}/end`);
 
@@ -256,6 +378,12 @@ test.describe('headless core: live (ADR-0001 D5)', () => {
           });
           core.load(src);
           await core.ready;
+          if (!core.live.isLive) {
+            await new Promise<void>((r) => core.addEventListener('livechange', function once() {
+              core.removeEventListener('livechange', once);
+              r();
+            }));
+          }
           await video.play();
           await new Promise((r) => setTimeout(r, 3000));
         }, { src: liveUrl('dash', id, 3) });
@@ -279,7 +407,7 @@ test.describe('<ultra-media> element: live (ADR-0001 D5)', () => {
       const id = `element-${testInfo.testId}`;
 
       await page.evaluate(() => document.querySelector('#player')!.setAttribute('live', ''));
-      await setSrc(page, liveUrl(engine, id, 8));
+      await setSrc(page, liveUrl(engine, id, EDGE_TEST_WINDOW));
 
       await expect.poll(async () => getProp(page, 'isLive'), { timeout: 10_000 }).toBe(true);
       await expect.poll(async () => (await getLog(page)).some((e) => e.name === 'livechange'), { timeout: 10_000 }).toBe(true);
