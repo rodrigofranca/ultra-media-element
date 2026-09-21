@@ -1,11 +1,13 @@
 import type { IMediaPlayer, MediaTracks, MediaPlayerError, MediaErrorCategory } from "../core/media-player";
 import type { RequestContext, RequestPolicy } from "../core/request-policy";
 import { applyRequestPolicy, applyNativeLoad, deferredGuardedReport, restoreCrossOrigin, type RequestPatch, type CrossOriginBackup } from "../core/apply-request-policy";
+import { goToLiveViaSeekable, watchNativeLive, type NativeLiveWatch } from "../core/native-live";
 import { log } from "../utils/log";
 import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
 import { HLS_JS_SDK_URL } from "../core/sdk-config";
 import { mapNativeMediaError } from "./native-media-error";
+import { normalizeLiveDate } from "../core/live-date";
 
 // hls.js's LoaderContextType values (node_modules/hls.js/dist/hls.d.ts) -
 // MANIFEST/LEVEL/AUDIO_TRACK/SUBTITLE_TRACK/STEERING_MANIFEST are all
@@ -73,8 +75,19 @@ export class HlsPlayer implements IMediaPlayer {
   // Native-HLS-fallback branch of applyLoad() only (defects 2/3).
   private crossOriginState: CrossOriginBackup = [null, null];
   private loadGeneration = 0;
+  // ADR-0001 D5 - tracked from hls.js's own LEVEL_LOADED event
+  // (this.wasLive below). result-cycle2.md, defect 1: the native-HLS-
+  // without-MSE fallback branch (Safari/older Smart TVs) is covered too,
+  // via the shared watchNativeLive() helper (`nativeLive` below) - hls.js
+  // itself never runs on that path, so there's no LEVEL_LOADED to read
+  // from.
+  private liveCallback?: (isLive: boolean, playheadDate: Date | null, liveEdgeOffsetSeconds?: number) => void;
+  private streamEndedCallback?: () => void;
+  private wasLive = false;
+  private nativeLive?: NativeLiveWatch;
+  private levelLoadedHandler?: (event: unknown, data: any) => void;
 
-  constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy) {
+  constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy, private liveOpt?: boolean | 'auto') {
     log("Powered by Hls.js");
     this.nativeEl = element;
     this.requestPolicy = requestPolicy;
@@ -194,14 +207,72 @@ export class HlsPlayer implements IMediaPlayer {
     }
   }
 
+  // ADR-0001 D5 - streamended fires purely on the ENDLIST transition
+  // (data.details.live going true -> false); a terminal manifest error
+  // stays `error` below, unredirected - see result.md "critério de
+  // streamended vs error" for why (the fixture's "end broadcast" control
+  // always publishes ENDLIST, never a bare 404, so this is the only
+  // signal that actually distinguishes the two here).
+  //
+  // result-cycle2.md, defect 5: LEVEL_LOADED fires for *every* rendition
+  // hls.js loads a playlist for, not just the one actually playing (ABR
+  // probing during a switch loads the candidate level's playlist ahead of
+  // actually switching to it, a manual switchRendition, or an alternate
+  // audio/subtitle playlist) - reacting to any of them let another
+  // rendition's live:false (or a mid-switch reload) end/mask the
+  // currently active one's state. `hls.currentLevel` is the level
+  // actually driving playback right now (only changes once a switch is
+  // committed, not merely queued) - the right "active" reference; falls
+  // back to `loadLevel` before the very first level has ever played
+  // (`currentLevel` is -1 until then).
+  //
+  // result-cycle3.md, defect 3 - re-bound per applyLoad(), bailing on `generation` first.
+  private bindLevelLoaded(): void {
+    if (this.levelLoadedHandler) this.hls.off(this.Hls.Events.LEVEL_LOADED, this.levelLoadedHandler);
+    const generation = this.loadGeneration;
+    this.levelLoadedHandler = (_event: unknown, data: any) => {
+      if (generation !== this.loadGeneration) return;
+      if (this.liveOpt === false) return;
+      const currentLevel = typeof this.hls.currentLevel === 'number' ? this.hls.currentLevel : -1;
+      const loadLevel = typeof this.hls.loadLevel === 'number' ? this.hls.loadLevel : -1;
+      const activeLevel = currentLevel !== -1 ? currentLevel : loadLevel;
+      if (typeof data.level === 'number' && activeLevel !== -1 && data.level !== activeLevel) return;
+      // `wasLive`/the transition check always tracks the *manifest's own*
+      // signal, never the liveOpt:true override below - otherwise a forced-
+      // live stream could never report streamended once ENDLIST genuinely
+      // appears (liveOpt:true would keep masking it forever). The override
+      // only ever affects what's *reported* as isLive.
+      const manifestLive = !!data.details?.live;
+      if (this.wasLive && !manifestLive) this.streamEndedCallback?.();
+      this.wasLive = manifestLive;
+      this.liveCallback?.(this.liveOpt === true || manifestLive, normalizeLiveDate(this.hls.playingDate), this.computeLiveEdgeOffset());
+    };
+    this.hls.on(this.Hls.Events.LEVEL_LOADED, this.levelLoadedHandler);
+  }
+
   private applyLoad(src: string) {
     if (this.Hls?.isSupported()) {
       this.usingNativeFallback = false;
+      this.nativeLive?.off();
+      this.nativeLive = undefined;
+      this.bindLevelLoaded();
       this.hls.loadSource(src);
     } else if (this.nativeEl.canPlayType("application/vnd.apple.mpegurl")) {
       // No MSE here - the browser itself fetches the manifest/segments
       // (ADR-0001 D4, same limitation as VideoPlayer/AudioPlayer).
+      // result-cycle2.md, defect 1: hls.js itself never runs on this path
+      // (no LEVEL_LOADED to learn isLive/playheadDate/streamended from), so
+      // live is driven by the same shared native-<video> detection
+      // NativeMediaPlayer uses - same signals (`duration === Infinity`,
+      // Safari's `getStartDate()`), same rules (liveOpt true/false/'auto').
       this.usingNativeFallback = true;
+      this.nativeLive?.off();
+      this.nativeLive = watchNativeLive(
+        this.nativeEl,
+        this.liveOpt,
+        (isLive, playheadDate, liveEdgeOffsetSeconds) => this.liveCallback?.(isLive, playheadDate, liveEdgeOffsetSeconds),
+        () => this.streamEndedCallback?.(),
+      );
       const generation = this.loadGeneration;
       this.nativeEl.src = applyNativeLoad(this.nativeEl, src, 'manifest', 'hls.js', this.requestPolicy, deferredGuardedReport(
         (e) => this.errorCallback?.(e),
@@ -210,6 +281,27 @@ export class HlsPlayer implements IMediaPlayer {
     } else {
       console.error("HLS não suportado no navegador.");
     }
+  }
+
+  // result-cycle2.md, defect 8 - hls.js's own `liveSyncPosition` (edge
+  // estimate minus `targetLatency`, ADR-0001/hls.mjs `latency-controller`)
+  // is the actual position goToLive() targets; reporting the *distance*
+  // from `seekableEnd` to it (rather than the absolute position) keeps the
+  // core, which has no notion of hls.js internals, engine-agnostic.
+  // `targetLatency` alone (holdBack, or `liveSyncDurationCount x
+  // targetduration` - 3x by default) is the fallback once a level exists
+  // but `liveSyncPosition` isn't computable yet (no buffered range).
+  private computeLiveEdgeOffset(): number | undefined {
+    if (!this.hls) return undefined;
+    const pos = this.hls.liveSyncPosition;
+    if (typeof pos === 'number') {
+      const seekable = this.nativeEl.seekable;
+      if (seekable.length) {
+        const end = seekable.end(seekable.length - 1);
+        return Math.max(0, end - pos);
+      }
+    }
+    return typeof this.hls.targetLatency === 'number' ? this.hls.targetLatency : undefined;
   }
 
   onTracksChange(callback: (tracks: MediaTracks) => void) {
@@ -236,6 +328,29 @@ export class HlsPlayer implements IMediaPlayer {
     }
   }
 
+  onLiveChange(callback: (isLive: boolean, playheadDate: Date | null, liveEdgeOffsetSeconds?: number) => void) {
+    this.liveCallback = callback;
+  }
+
+  onStreamEnded(callback: () => void) {
+    this.streamEndedCallback = callback;
+  }
+
+  // result-cycle2.md, defect 1: the native-HLS-without-MSE fallback path is
+  // covered via `nativeLive` (watchNativeLive shares goToLiveViaSeekable's
+  // seekable.end() target, the only one available with no hls.js instance
+  // driving playback).
+  goToLive(): void {
+    if (this.usingNativeFallback) {
+      if (this.nativeLive?.isLive()) goToLiveViaSeekable(this.nativeEl);
+      return;
+    }
+    if (!this.wasLive) return;
+    const pos = this.hls?.liveSyncPosition;
+    if (pos != null) this.nativeEl.currentTime = pos;
+    else goToLiveViaSeekable(this.nativeEl);
+  }
+
   destroy() {
     this.destroyed = true;
 
@@ -248,6 +363,9 @@ export class HlsPlayer implements IMediaPlayer {
       this.hls.destroy();
       this.hls = null;
     }
+
+    this.nativeLive?.off();
+    this.nativeLive = undefined;
 
     // hls.js's own destroy() has no idea nativeEl.src was set directly by
     // the native-HLS-without-MSE branch above - undo that ourselves, same
@@ -262,10 +380,13 @@ export class HlsPlayer implements IMediaPlayer {
     restoreCrossOrigin(this.nativeEl, this.crossOriginState);
   }
 
-  load(src: string, requestPolicy?: RequestPolicy) {
+  load(src: string, requestPolicy?: RequestPolicy, live?: boolean | 'auto') {
     this.loadGeneration++;
     this.pendingSrc = src;
     this.requestPolicy = requestPolicy;
+    this.liveOpt = live; // result-cycle2.md, defect 4
+    this.wasLive = false;
+    this.nativeLive?.reset();
     if (this.destroyed || !this.hls) return;
     this.applyLoad(src);
   }

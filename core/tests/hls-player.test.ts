@@ -611,3 +611,353 @@ describe('HlsPlayer native HLS fallback request policy (no MSE - ADR-0001 D4)', 
     expect(onError).not.toHaveBeenCalled();
   });
 });
+
+// ADR-0001 D5
+type LevelLoadedHandler = (event: unknown, data: { details: { live: boolean } }) => void;
+
+async function setupLivePlayer(liveOpt?: boolean | 'auto', src = 'https://example.com/live.m3u8') {
+  const handlers: Record<string, (event: unknown, data: any) => void> = {};
+  const hlsInstance: any = {
+    attachMedia: jest.fn(),
+    on: jest.fn((event: string, cb: (event: unknown, data: any) => void) => { handlers[event] = cb; }),
+    // result-cycle3.md, defect 3 - bindLevelLoaded() removes the previous
+    // generation's listener before attaching a fresh one; the mock mirrors
+    // real hls.js's on/off pairing so that re-binding is observable too.
+    off: jest.fn((event: string, cb: (event: unknown, data: any) => void) => {
+      if (handlers[event] === cb) delete handlers[event];
+    }),
+    loadSource: jest.fn(),
+    destroy: jest.fn(),
+    liveSyncPosition: null as number | null,
+    playingDate: null as Date | null,
+  };
+  (window as any).Hls = jest.fn().mockImplementation(() => hlsInstance);
+  (window as any).Hls.Events = { ERROR: 'hlsError', MANIFEST_PARSED: 'hlsManifestParsed', LEVEL_LOADED: 'hlsLevelLoaded' };
+  (window as any).Hls.isSupported = jest.fn().mockReturnValue(true);
+
+  const nativeEl = createVideoElement();
+  const player = new HlsPlayer(nativeEl, undefined, liveOpt);
+  // result-cycle3.md, defect 3 - LEVEL_LOADED is now bound inside
+  // applyLoad(), itself only reachable through load() (matches real usage:
+  // PlayerFactory always calls load() right after construction) - a bare
+  // `new HlsPlayer()` with no load() would leave `handlers['hlsLevelLoaded']`
+  // unset, unlike the old always-bound-in-setup() behavior. `liveOpt` must be
+  // passed through explicitly - load() always overwrites it (result-cycle2.md,
+  // defect 4), constructor-time or not.
+  player.load(src, undefined, liveOpt);
+  await player.onReady;
+  return { player, handlers, hlsInstance, nativeEl };
+}
+
+describe('HlsPlayer live (ADR-0001 D5)', () => {
+  afterEach(() => {
+    delete (window as any).Hls;
+  });
+
+  it("'auto': isLive follows data.details.live from LEVEL_LOADED, playheadDate from hls.playingDate", async () => {
+    const { player, handlers, hlsInstance } = await setupLivePlayer('auto');
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+    hlsInstance.playingDate = new Date('2026-01-01T00:00:00Z');
+
+    (handlers['hlsLevelLoaded'] as LevelLoadedHandler)(undefined, { details: { live: true } });
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, hlsInstance.playingDate, undefined);
+  });
+
+  // result-cycle3.md, defect 2
+  it('playheadDate is null (not Invalid Date) when hls.playingDate is an Invalid Date', async () => {
+    const { player, handlers, hlsInstance } = await setupLivePlayer('auto');
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+    hlsInstance.playingDate = new Date(NaN);
+
+    (handlers['hlsLevelLoaded'] as LevelLoadedHandler)(undefined, { details: { live: true } });
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, null, undefined);
+  });
+
+  it("live: false never reports live, even when the manifest says so", async () => {
+    const { player, handlers } = await setupLivePlayer(false);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    (handlers['hlsLevelLoaded'] as LevelLoadedHandler)(undefined, { details: { live: true } });
+
+    expect(onLiveChange).not.toHaveBeenCalled();
+  });
+
+  it("live: true forces isLive even when the manifest says it isn't", async () => {
+    const { player, handlers } = await setupLivePlayer(true);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    (handlers['hlsLevelLoaded'] as LevelLoadedHandler)(undefined, { details: { live: false } });
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, null, undefined);
+  });
+
+  it('streamended fires exactly once on the live -> non-live (ENDLIST) transition, not on later reloads', async () => {
+    const { player, handlers } = await setupLivePlayer('auto');
+    const onStreamEnded = jest.fn();
+    player.onStreamEnded(onStreamEnded);
+    const loaded = handlers['hlsLevelLoaded'] as LevelLoadedHandler;
+
+    loaded(undefined, { details: { live: true } });
+    loaded(undefined, { details: { live: true } }); // another reload, still live - no transition
+    loaded(undefined, { details: { live: false } }); // ENDLIST appeared
+    loaded(undefined, { details: { live: false } }); // stays non-live - must not re-fire
+
+    expect(onStreamEnded).toHaveBeenCalledTimes(1);
+  });
+
+  it('goToLive() seeks to hls.liveSyncPosition while live, is a silent no-op otherwise', async () => {
+    const { player, handlers, hlsInstance, nativeEl } = await setupLivePlayer('auto');
+    nativeEl.currentTime = 1;
+
+    player.goToLive(); // not live yet
+    expect(nativeEl.currentTime).toBe(1);
+
+    (handlers['hlsLevelLoaded'] as LevelLoadedHandler)(undefined, { details: { live: true } });
+    hlsInstance.liveSyncPosition = 42;
+    player.goToLive();
+
+    expect(nativeEl.currentTime).toBe(42);
+  });
+
+  // result-cycle2.md, defect 8
+  it('computeLiveEdgeOffset: seekableEnd - liveSyncPosition when hls.js exposes a sync position', async () => {
+    const { player, handlers, hlsInstance, nativeEl } = await setupLivePlayer('auto');
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+    Object.defineProperty(nativeEl, 'seekable', { configurable: true, value: { length: 1, start: () => 0, end: () => 30 } });
+    hlsInstance.liveSyncPosition = 24; // 6s behind the edge
+
+    (handlers['hlsLevelLoaded'] as LevelLoadedHandler)(undefined, { details: { live: true } });
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, null, 6);
+  });
+
+  it('computeLiveEdgeOffset: falls back to hls.targetLatency with no liveSyncPosition/seekable range yet', async () => {
+    const { player, handlers, hlsInstance } = await setupLivePlayer('auto');
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+    hlsInstance.liveSyncPosition = null;
+    hlsInstance.targetLatency = 18; // e.g. 3x a 6s target duration
+
+    (handlers['hlsLevelLoaded'] as LevelLoadedHandler)(undefined, { details: { live: true } });
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, null, 18);
+  });
+
+  // result-cycle2.md, defect 4
+  it('load() reapplies a reconfigured live option to the very next manifest report', async () => {
+    const { player, handlers } = await setupLivePlayer(true); // forced live
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    player.load('https://example.com/b.m3u8', undefined, false); // reconfigured to off
+
+    (handlers['hlsLevelLoaded'] as LevelLoadedHandler)(undefined, { details: { live: true } });
+
+    expect(onLiveChange).not.toHaveBeenCalled();
+  });
+});
+
+// result-cycle2.md, defect 5 - LEVEL_LOADED fires per rendition, not just the
+// one actually playing; a *different* level's manifest must never end/mask
+// the currently active one's live state.
+describe('HlsPlayer streamended: level-aware (result-cycle2.md, defect 5)', () => {
+  afterEach(() => {
+    delete (window as any).Hls;
+  });
+
+  it('(a) a VOD that already starts with ENDLIST never fires streamended', async () => {
+    const { player, handlers } = await setupLivePlayer('auto');
+    const onStreamEnded = jest.fn();
+    player.onStreamEnded(onStreamEnded);
+    const loaded = handlers['hlsLevelLoaded'] as LevelLoadedHandler;
+
+    loaded(undefined, { level: 0, details: { live: false } }); // first manifest ever seen is already static
+
+    expect(onStreamEnded).not.toHaveBeenCalled();
+  });
+
+  it("(b) a different level loading with live:false doesn't end the currently active, still-live one", async () => {
+    const { player, handlers, hlsInstance } = await setupLivePlayer('auto');
+    const onStreamEnded = jest.fn();
+    player.onStreamEnded(onStreamEnded);
+    const loaded = handlers['hlsLevelLoaded'] as LevelLoadedHandler;
+    hlsInstance.currentLevel = 0; // level A is what's actually playing
+
+    loaded(undefined, { level: 0, details: { live: true } }); // active level A: live
+
+    // ABR probes/queues a switch to level B - its playlist loads (and may
+    // even report live:false) before the switch to it ever commits, so
+    // `currentLevel` is still A.
+    hlsInstance.loadLevel = 1;
+    loaded(undefined, { level: 1, details: { live: false } }); // B's own manifest, unrelated to A
+
+    expect(onStreamEnded).not.toHaveBeenCalled();
+  });
+
+  it('(c) the same level going live -> ENDLIST fires streamended exactly once', async () => {
+    const { player, handlers, hlsInstance } = await setupLivePlayer('auto');
+    const onStreamEnded = jest.fn();
+    player.onStreamEnded(onStreamEnded);
+    const loaded = handlers['hlsLevelLoaded'] as LevelLoadedHandler;
+    hlsInstance.loadLevel = 0;
+
+    loaded(undefined, { level: 0, details: { live: true } });
+    loaded(undefined, { level: 0, details: { live: false } }); // ENDLIST on the active level
+
+    expect(onStreamEnded).toHaveBeenCalledTimes(1);
+  });
+
+  it('(d) repeated LEVEL_LOADED after the end never re-fires', async () => {
+    const { player, handlers, hlsInstance } = await setupLivePlayer('auto');
+    const onStreamEnded = jest.fn();
+    player.onStreamEnded(onStreamEnded);
+    const loaded = handlers['hlsLevelLoaded'] as LevelLoadedHandler;
+    hlsInstance.loadLevel = 0;
+
+    loaded(undefined, { level: 0, details: { live: true } });
+    loaded(undefined, { level: 0, details: { live: false } });
+    loaded(undefined, { level: 0, details: { live: false } });
+    loaded(undefined, { level: 0, details: { live: false } });
+
+    expect(onStreamEnded).toHaveBeenCalledTimes(1);
+  });
+});
+
+// result-cycle3.md, defect 3 - a LEVEL_LOADED delivered after an
+// intervening load() already moved this (reused) hls.js instance onto a
+// different source must never touch that new source's live state, even
+// while hls.js's own currentLevel/loadLevel are still -1 (the window where
+// the plain level filter alone lets anything through - see
+// bindLevelLoaded()'s comment in hls-player.ts).
+describe('HlsPlayer LEVEL_LOADED generation guard (result-cycle3.md, defect 3)', () => {
+  afterEach(() => {
+    delete (window as any).Hls;
+  });
+
+  it('a stale LEVEL_LOADED from a superseded load() is discarded even if still invoked directly', async () => {
+    const { player, handlers, hlsInstance } = await setupLivePlayer('auto', 'https://example.com/a.m3u8');
+    const staleHandler = handlers['hlsLevelLoaded'] as LevelLoadedHandler;
+    const onLiveChange = jest.fn();
+    const onStreamEnded = jest.fn();
+    player.onLiveChange(onLiveChange);
+    player.onStreamEnded(onStreamEnded);
+
+    staleHandler(undefined, { level: 0, details: { live: true } }); // A: live
+    expect(onLiveChange).toHaveBeenCalledTimes(1);
+
+    player.load('https://example.com/b.m3u8'); // supersedes A on the same hls.js instance
+    // hls.js resets currentLevel/loadLevel to -1 for a fresh source until it
+    // picks a level - the exact window where `activeLevel !== -1 && ...`
+    // alone doesn't filter anything out.
+    hlsInstance.currentLevel = -1;
+    hlsInstance.loadLevel = -1;
+
+    // A's own late event, arriving after load(B) - must be a no-op: no
+    // stale isLive report, no false streamended leaking onto B.
+    staleHandler(undefined, { level: 0, details: { live: false } });
+
+    expect(onLiveChange).toHaveBeenCalledTimes(1); // still just A's
+    expect(onStreamEnded).not.toHaveBeenCalled();
+
+    // hls.off() really unsubscribed the stale closure...
+    expect(hlsInstance.off).toHaveBeenCalledWith('hlsLevelLoaded', staleHandler);
+    // ...and B got its own, distinct listener that works normally.
+    expect(handlers['hlsLevelLoaded']).not.toBe(staleHandler);
+    (handlers['hlsLevelLoaded'] as LevelLoadedHandler)(undefined, { level: -1, details: { live: true } });
+    expect(onLiveChange).toHaveBeenCalledTimes(2);
+    expect(onLiveChange).toHaveBeenLastCalledWith(true, null, undefined);
+  });
+
+  it('load() removes the previous generation listener instead of accumulating dead ones', async () => {
+    const { hlsInstance, player } = await setupLivePlayer('auto', 'https://example.com/a.m3u8');
+
+    player.load('https://example.com/b.m3u8');
+    player.load('https://example.com/c.m3u8');
+
+    const onCalls = (hlsInstance.on as jest.Mock).mock.calls.filter(([event]) => event === 'hlsLevelLoaded');
+    const offCalls = (hlsInstance.off as jest.Mock).mock.calls.filter(([event]) => event === 'hlsLevelLoaded');
+    expect(onCalls).toHaveLength(3); // one per load(): A, B, C
+    expect(offCalls).toHaveLength(2); // A's and B's listeners each removed once superseded
+  });
+});
+
+// result-cycle2.md, defect 1 - Safari/older Smart TVs (no MSE): hls.js
+// itself never drives playback, so live must come from the shared native
+// <video> detection (native-live.ts), the same one native-media-player.ts
+// uses for mp4/mp3.
+describe('HlsPlayer native-HLS-without-MSE fallback: live (result-cycle2.md, defect 1)', () => {
+  afterEach(() => {
+    delete (window as any).Hls;
+  });
+
+  async function setupNativeFallbackLivePlayer(liveOpt?: boolean | 'auto') {
+    (window as any).Hls = jest.fn().mockImplementation(() => ({
+      attachMedia: jest.fn(),
+      on: jest.fn(),
+      loadSource: jest.fn(),
+      destroy: jest.fn(),
+    }));
+    (window as any).Hls.Events = { ERROR: 'hlsError', MANIFEST_PARSED: 'hlsManifestParsed', LEVEL_LOADED: 'hlsLevelLoaded' };
+    (window as any).Hls.isSupported = jest.fn().mockReturnValue(false);
+
+    const nativeEl = createVideoElement();
+    nativeEl.canPlayType = jest.fn().mockReturnValue('maybe');
+    const player = new HlsPlayer(nativeEl, undefined, liveOpt);
+    await player.onReady;
+    player.load('https://example.com/live-fallback.m3u8');
+    return { player, nativeEl };
+  }
+
+  function setDuration(el: HTMLVideoElement, value: number) {
+    Object.defineProperty(el, 'duration', { configurable: true, value });
+  }
+
+  function setSeekable(el: HTMLVideoElement, end: number) {
+    Object.defineProperty(el, 'seekable', { configurable: true, value: { length: 1, start: () => 0, end: () => end } });
+  }
+
+  it('reports isLive/playheadDate, grows the window, goToLive() seeks seekable.end(), and fires exactly one streamended', async () => {
+    const { player, nativeEl } = await setupNativeFallbackLivePlayer('auto');
+    const onLiveChange = jest.fn();
+    const onStreamEnded = jest.fn();
+    player.onLiveChange(onLiveChange);
+    player.onStreamEnded(onStreamEnded);
+
+    setSeekable(nativeEl, 10);
+    setDuration(nativeEl, Infinity);
+    nativeEl.dispatchEvent(new Event('durationchange'));
+    expect(onLiveChange).toHaveBeenLastCalledWith(true, null, 2);
+
+    // Window grows while still live - 'progress' now reports it too (defect 8).
+    setSeekable(nativeEl, 30);
+    nativeEl.dispatchEvent(new Event('progress'));
+    expect(onLiveChange).toHaveBeenLastCalledWith(true, null, 2);
+
+    Object.defineProperty(nativeEl, 'currentTime', { configurable: true, value: 0, writable: true });
+    player.goToLive();
+    expect(nativeEl.currentTime).toBe(30); // seekable.end() - no hls.js liveSyncPosition on this path
+
+    setDuration(nativeEl, 42); // broadcast ends: duration leaves Infinity
+    nativeEl.dispatchEvent(new Event('durationchange'));
+    nativeEl.dispatchEvent(new Event('durationchange')); // must not re-fire
+
+    expect(onStreamEnded).toHaveBeenCalledTimes(1);
+  });
+
+  it('goToLive() is a silent no-op before the stream is known to be live', async () => {
+    const { player, nativeEl } = await setupNativeFallbackLivePlayer('auto');
+    Object.defineProperty(nativeEl, 'currentTime', { configurable: true, value: 1, writable: true });
+    setSeekable(nativeEl, 30);
+
+    player.goToLive();
+
+    expect(nativeEl.currentTime).toBe(1);
+  });
+});

@@ -1,8 +1,9 @@
-import type { IMediaPlayer, MediaTracks, MediaPlayerError, VideoRendition, MediaTrack } from './media-player';
+import type { IMediaPlayer, MediaTracks, MediaPlayerError, VideoRendition, MediaTrack, LiveInfo } from './media-player';
 import type { RequestPolicy } from './request-policy';
 import { PlayerFactory } from './player-factory';
 import { Format } from './format';
 import { detectFormat } from './format-detector';
+import { normalizeLiveDate } from './live-date';
 
 /**
  * ADR-0001 D1/D2 - pure engine-orchestration class, zero runtime deps,
@@ -47,6 +48,16 @@ export interface UltraMediaCoreOptions {
    * was active when that load() ran.
    */
   request?: RequestPolicy;
+  /**
+   * ADR-0001 D5 - default 'auto': isLive comes from the manifest. `true`
+   * forces live handling (start-at-edge is the engine SDK's own default
+   * behavior for a live manifest, already unconditional - see
+   * result.md "por que goToLive()/borda inicial não têm código próprio");
+   * `false` forces VOD treatment regardless of what the manifest/engine
+   * reports. Read once at player construction, like `container` - a later
+   * configure({ live }) only applies starting with the next load().
+   */
+  live?: boolean | 'auto';
 }
 
 export type UltraMediaCoreEventType =
@@ -58,7 +69,9 @@ export type UltraMediaCoreEventType =
   | 'renditionschange'
   | 'renditionchange'
   | 'audiotrackschange'
-  | 'audiotrackchange';
+  | 'audiotrackchange'
+  | 'livechange'
+  | 'streamended';
 
 export interface UltraMediaCoreEvent<T = unknown> {
   type: UltraMediaCoreEventType;
@@ -96,6 +109,35 @@ class Emitter {
   }
 }
 
+// result-cycle2.md, defect 8 - `liveEdge`/`dvr` are derived from a
+// per-engine "distance from seekableEnd to the normal live-sync position"
+// (`liveEdgeOffsetSeconds`, reported by onLiveChange). Used as a fallback
+// only before any engine has reported one yet (matches the historic flat
+// 30s dvr threshold: 2x15 = 30).
+const DEFAULT_LIVE_EDGE_OFFSET_SECONDS = 15;
+// dvr is true once the seekable window is significantly larger than the
+// normal distance to the edge (> 2x that distance), with a floor so a
+// tiny/zero live-edge-offset (e.g. a manifest with no holdBack/target
+// latency configured) doesn't call a barely-larger-than-instantaneous
+// window "dvr".
+const DVR_DISTANCE_MULTIPLIER = 2;
+const DVR_FLOOR_SECONDS = 30;
+// result-cycle2.md, defect 7 - `livechange` only fires when isLive/dvr/the
+// seekable window changes by at least this much; smaller deltas (playback
+// ticks) don't fire it. playheadDate/latency are excluded from this
+// comparison entirely - see the `live` getter below.
+const WINDOW_GRANULARITY_SECONDS = 1;
+
+interface LiveWindowState {
+  readonly isLive: boolean;
+  readonly seekableStart: number;
+  readonly seekableEnd: number;
+  readonly liveEdge: number;
+  readonly dvr: boolean;
+}
+
+const NEUTRAL_WINDOW: LiveWindowState = Object.freeze({ isLive: false, seekableStart: 0, seekableEnd: 0, liveEdge: 0, dvr: false });
+
 export class UltraMediaCore extends Emitter {
   readonly media: HTMLMediaElement;
 
@@ -120,6 +162,17 @@ export class UltraMediaCore extends Emitter {
   private _rendition: string | 'auto' = 'auto';
   private _audioTracks: readonly MediaTrack[] = [];
   private _audioTrack: string | null = null;
+  // result-cycle2.md, defect 7 - only the "stable" window fields live here;
+  // playheadDate/latency are derived fresh on every `live` read from
+  // `_playheadRef` below (see the `live` getter).
+  private _liveWindow: LiveWindowState = NEUTRAL_WINDOW;
+  // Last engine-reported (playheadDate, media.currentTime-at-that-report)
+  // pair. `live`'s getter extrapolates from it using how far `currentTime`
+  // has moved since, instead of needing a fresh event for every read
+  // (result-cycle2.md, defect 7) - same linear assumption
+  // native-live.ts's own formula already makes (wallclock advances with
+  // currentTime while genuinely playing).
+  private _playheadRef: { date: Date; mediaTime: number } | null = null;
 
   constructor(media: HTMLMediaElement, options: UltraMediaCoreOptions = {}) {
     super();
@@ -168,6 +221,70 @@ export class UltraMediaCore extends Emitter {
   }
 
   /**
+   * A fresh, frozen snapshot on every read (result-cycle2.md, defect 3) -
+   * `isLive`/`seekableStart`/`seekableEnd`/`liveEdge`/`dvr` come from the
+   * last relevant engine report (`_liveWindow`); `playheadDate`/`latency`
+   * are recomputed right now from `_playheadRef` + `media.currentTime`
+   * (defect 7) - never stale, never shared with a previous snapshot.
+   */
+  get live(): LiveInfo {
+    return Object.freeze({
+      ...this._liveWindow,
+      playheadDate: this.computePlayheadDate(),
+      latency: this._liveWindow.isLive ? Math.max(0, this._liveWindow.liveEdge - this.media.currentTime) : undefined,
+    });
+  }
+
+  /** No-op (silently) when the current engine isn't live, or has none. */
+  goToLive(): void { this.player?.goToLive?.(); }
+
+  private computePlayheadDate(): Date | null {
+    if (!this._playheadRef) return null;
+    const elapsedMs = (this.media.currentTime - this._playheadRef.mediaTime) * 1000;
+    return normalizeLiveDate(new Date(this._playheadRef.date.getTime() + elapsedMs));
+  }
+
+  private computeWindow(isLive: boolean, liveEdgeOffsetSeconds: number | undefined): LiveWindowState {
+    const seekable = this.media.seekable;
+    const len = seekable.length;
+    const seekableStart = len ? seekable.start(0) : 0;
+    const seekableEnd = len ? seekable.end(len - 1) : 0;
+    // result-cycle2.md, defect 8 - proportional to the engine's own normal
+    // distance from the edge instead of a flat threshold; falls back to a
+    // documented default before any engine has reported an offset yet.
+    const offset = liveEdgeOffsetSeconds ?? DEFAULT_LIVE_EDGE_OFFSET_SECONDS;
+    const liveEdge = isLive ? Math.max(seekableStart, seekableEnd - offset) : seekableEnd;
+    const dvr = isLive && (seekableEnd - seekableStart) > Math.max(DVR_FLOOR_SECONDS, DVR_DISTANCE_MULTIPLIER * offset);
+    return { isLive, seekableStart, seekableEnd, liveEdge, dvr };
+  }
+
+  /** result-cycle2.md, defect 7 - the only gate on whether `livechange` fires. */
+  private isRelevantLiveChange(next: LiveWindowState): boolean {
+    const prev = this._liveWindow;
+    return (
+      next.isLive !== prev.isLive ||
+      next.dvr !== prev.dvr ||
+      Math.abs(next.seekableStart - prev.seekableStart) >= WINDOW_GRANULARITY_SECONDS ||
+      Math.abs(next.seekableEnd - prev.seekableEnd) >= WINDOW_GRANULARITY_SECONDS ||
+      Math.abs(next.liveEdge - prev.liveEdge) >= WINDOW_GRANULARITY_SECONDS
+    );
+  }
+
+  /**
+   * Resets live state to neutral - called at the very start of every
+   * load() (result-cycle2.md, defect 2: a same-format reused engine's
+   * previous live state must not survive into the new source) and from
+   * teardownPlayer() (format change / destroy()). Idempotent: emits
+   * `livechange` only if something was actually live/non-neutral.
+   */
+  private resetLive(): void {
+    const changed = this.isRelevantLiveChange(NEUTRAL_WINDOW);
+    this._liveWindow = NEUTRAL_WINDOW;
+    this._playheadRef = null;
+    if (changed) this.emit('livechange', this.live);
+  }
+
+  /**
    * Same branching as the pre-extraction `applySrcChange`: reuse the current
    * player via its own `load()` when the format is unchanged, otherwise
    * destroy it and create a fresh one. `destroy()` (called from here on a
@@ -184,13 +301,20 @@ export class UltraMediaCore extends Emitter {
     const generation = this.generation;
     this.rejectReady(new Error('UltraMediaCore: superseded by a new load()'));
     this.ready = this.freshReadyPromise();
+    // result-cycle2.md, defect 2 - every load() starts from neutral live
+    // state, whether or not the engine is reused; the (possibly reused)
+    // player's own next onLiveChange report is what re-establishes it.
+    this.resetLive();
 
     if (this.player && this._format !== newFormat) {
       this.teardownPlayer();
     }
 
     if (this.player && this._format === newFormat) {
-      this.player.load(src, this.options.request);
+      // `this.options.live` (result-cycle2.md, defect 4): like `request`,
+      // reaches a reused engine starting with this load() - not just at
+      // construction time.
+      this.player.load(src, this.options.request, this.options.live);
     } else {
       this.player = PlayerFactory.create({
         src,
@@ -198,6 +322,7 @@ export class UltraMediaCore extends Emitter {
         container: this.options.container,
         format: newFormat ?? undefined,
         requestPolicy: this.options.request,
+        live: this.options.live,
       });
       // Learned directly from the same resolution PlayerFactory.create()
       // just used, not read back off the <video> - the core no longer
@@ -250,6 +375,27 @@ export class UltraMediaCore extends Emitter {
       this.emit('audiotrackschange', { audioTracks: this._audioTracks });
       this.emit('renditionschange', { renditions: this._renditions });
     });
+
+    player.onLiveChange?.((isLive: boolean, playheadDate: Date | null, liveEdgeOffsetSeconds?: number) => {
+      if (generation !== this.generation) return;
+      // On-demand fields' reference point always updates - only the
+      // "stable" window fields (and whether `livechange` fires) go through
+      // the relevance gate (result-cycle2.md, defect 7).
+      this._playheadRef = playheadDate ? { date: new Date(playheadDate.getTime()), mediaTime: this.media.currentTime } : null;
+      const next = this.computeWindow(isLive, liveEdgeOffsetSeconds);
+      if (this.isRelevantLiveChange(next)) {
+        this._liveWindow = next;
+        this.emit('livechange', this.live);
+      }
+    });
+
+    player.onStreamEnded?.(() => {
+      if (generation !== this.generation) return;
+      this._playheadRef = null;
+      this._liveWindow = this.computeWindow(false, undefined);
+      this.emit('livechange', this.live);
+      this.emit('streamended', undefined);
+    });
   }
 
   private teardownPlayer(): void {
@@ -259,6 +405,7 @@ export class UltraMediaCore extends Emitter {
     this._audioTracks = [];
     this._rendition = 'auto';
     this._audioTrack = null;
+    this.resetLive();
     // The core writes nothing on the host's element besides `src`. A player
     // that does (YouTubePlayer hides the native <video>) undoes its own
     // write in its destroy(), which the line above already ran.

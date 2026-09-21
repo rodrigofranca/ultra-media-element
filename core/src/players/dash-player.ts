@@ -1,3 +1,4 @@
+import { PlayGuard } from "./play-guard";
 import type { IMediaPlayer, MediaTracks, MediaPlayerError, MediaErrorCategory } from "../core/media-player";
 import type { RequestContext, RequestPolicy } from "../core/request-policy";
 import { applyRequestPolicy } from "../core/apply-request-policy";
@@ -6,6 +7,7 @@ import { loadSDK } from "../utils/network";
 import { isUndefined } from "../utils/unit";
 import { DASHJS_SDK_URL } from "../core/sdk-config";
 import { mapNativeMediaError } from "./native-media-error";
+import { normalizeLiveDate } from "../core/live-date";
 
 // dash.js's internal HTTPRequest.type string constants
 // (dist/modern/umd/dash.all.debug.js - MPD_TYPE='MPD',
@@ -129,10 +131,17 @@ export class DashPlayer implements IMediaPlayer {
   // see HlsPlayer's `requestPolicy` field comment for why (ADR-0001 D4).
   private requestPolicy?: RequestPolicy;
   private requestInterceptor?: (request: any) => Promise<any>;
+  // ADR-0001 D5 - see hls-player.ts's equivalent fields' comment.
+  private liveCallback?: (isLive: boolean, playheadDate: Date | null, liveEdgeOffsetSeconds?: number) => void;
+  private streamEndedCallback?: () => void;
+  private wasLive = false;
 
-  constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy) {
+  private playGuard: PlayGuard;
+
+  constructor(private element: HTMLVideoElement, requestPolicy?: RequestPolicy, private liveOpt?: boolean | 'auto') {
     log("Powered by Dash.js");
     this.nativeEl = element;
+    this.playGuard = new PlayGuard(element);
     this.requestPolicy = requestPolicy;
     this.onReady = new Promise((resolve, reject) => {
       this.setup().then(resolve).catch(reject);
@@ -140,6 +149,17 @@ export class DashPlayer implements IMediaPlayer {
   }
 
   private async setup() {
+    this.playGuard.arm();
+    try {
+      await this.setupPlayer();
+    } catch (error) {
+      this.playGuard.release(false); // never leave the host's <video> patched
+      throw error;
+    }
+  }
+
+  private async setupPlayer() {
+
     if (isUndefined(this.dashjs)) {
       this.dashjs = await loadSDK(this.sdkSrc, 'dashjs');
     }
@@ -166,7 +186,7 @@ export class DashPlayer implements IMediaPlayer {
     this.player.addRequestInterceptor(this.requestInterceptor);
 
     this.player.on(this.dashjs.MediaPlayer.events.ERROR, (e: any) => {
-      if (this.errorCallback) {
+      {
         const err = e.error ?? {};
         const code: number | null = typeof err.code === 'number' ? err.code : null;
 
@@ -183,8 +203,13 @@ export class DashPlayer implements IMediaPlayer {
 
         const data = err.data ?? {};
         const errors = this.dashjs.MediaPlayer.errors;
-        this.errorCallback({
-          fatal: !isDashErrorRecoverable(code, errors),
+        const fatal = !isDashErrorRecoverable(code, errors);
+        // Release first, and regardless of whether the host listens for
+        // errors (onError is optional): a fatal error means no
+        // STREAM_INITIALIZED is coming for this load.
+        if (fatal) this.playGuard.release(true);
+        this.errorCallback?.({
+          fatal,
           category: categorizeDashError(code, errors),
           code: code != null ? String(code) : 'unknown',
           message: err.message || 'unknown',
@@ -229,6 +254,43 @@ export class DashPlayer implements IMediaPlayer {
         };
         this.tracksChangeCallback(tracks);
       }
+      reportLive();
+      this.playGuard.release(true); // result-cycle3.md, defect 1
+    });
+
+    // ADR-0001 D5 - PLAYBACK_TIME_UPDATED (public event, fires on every
+    // native timeupdate-equivalent tick) recomputes isLive/playheadDate
+    // continuously during playback - deliberately *not* MANIFEST_LOADED/
+    // MANIFEST_UPDATED: those only fire on dash.js's own periodic
+    // ManifestUpdater reload, which *does* happen reliably here (see
+    // result-cycle2.md, defect 9 - ciclo 1's claim that it didn't was
+    // wrong), but at most once per `minimumUpdatePeriod` - PLAYBACK_TIME_UPDATED
+    // gives `core.live` a much shorter, playback-driven refresh cadence
+    // instead of being capped by however slow the manifest's own update
+    // period is. DYNAMIC_TO_STATIC is dash.js's own direct signal for "this
+    // MPD just stopped being live" - the ENDLIST-equivalent, fired from a
+    // real autonomous reload - but doesn't fire on a source reattach
+    // (attachSource() resets the manifest model dash.js compares old/new
+    // `type` against internally, in `_update()`), so the transition is
+    // *also* caught the same way hls-player.ts's LEVEL_LOADED does it:
+    // comparing this tick's isDynamic() against the last one, inside
+    // reportLive() itself - both share the `wasLive` guard, so whichever
+    // fires first wins and the other becomes a no-op (never double-fires).
+    const reportLive = () => {
+      if (this.liveOpt === false) return;
+      const dynamicLive = this.player.isDynamic();
+      if (this.wasLive && !dynamicLive) this.streamEndedCallback?.();
+      this.wasLive = dynamicLive;
+      // result-cycle2.md, defect 6 - timeAsUTC() is NaN before playback starts/on VOD; normalizeLiveDate -> null.
+      const utcSeconds = dynamicLive ? this.player.timeAsUTC() : NaN;
+      const playheadDate = normalizeLiveDate(new Date(utcSeconds * 1000));
+      this.liveCallback?.(this.liveOpt === true || dynamicLive, playheadDate, this.computeLiveEdgeOffset());
+    };
+    this.player.on(this.dashjs.MediaPlayer.events.PLAYBACK_TIME_UPDATED, reportLive);
+    this.player.on(this.dashjs.MediaPlayer.events.DYNAMIC_TO_STATIC, () => {
+      if (!this.wasLive) return;
+      this.wasLive = false;
+      this.streamEndedCallback?.();
     });
 
     // Belt-and-suspenders alongside dash.js's own native-error forwarding
@@ -239,9 +301,9 @@ export class DashPlayer implements IMediaPlayer {
     this.nativeErrorHandler = () => {
       // No MediaError = a stale event for a source a newer load superseded
       // (the load algorithm resets `error` to null) - not this load's.
-      if (this.errorCallback && this.nativeEl.error) {
-        this.errorCallback(mapNativeMediaError(this.nativeEl.error, 'dash.js', this.pendingSrc ?? this.nativeEl.currentSrc));
-      }
+      if (!this.nativeEl.error) return;
+      this.playGuard.release(true); // a native MediaError is terminal for this load
+      this.errorCallback?.(mapNativeMediaError(this.nativeEl.error, 'dash.js', this.pendingSrc ?? this.nativeEl.currentSrc));
     };
     this.nativeEl.addEventListener('error', this.nativeErrorHandler);
 
@@ -251,7 +313,23 @@ export class DashPlayer implements IMediaPlayer {
   }
 
   private applyLoad(src: string) {
-    this.player.attachSource(src);
+    try {
+      this.player.attachSource(src);
+    } catch (cause) {
+      // No STREAM_INITIALIZED/ERROR will follow a source dash.js rejected
+      // synchronously - don't leave the host's <video> guarded, and report
+      // it like any other fatal load failure.
+      this.playGuard.release(true);
+      this.errorCallback?.({
+        fatal: true,
+        category: 'otherError',
+        code: 'SOURCE_REJECTED',
+        message: (cause as Error)?.message || 'dash.js rejected the source',
+        engine: 'dash.js',
+        url: src,
+        cause,
+      });
+    }
   }
 
   onTracksChange(callback: (tracks: MediaTracks) => void) {
@@ -278,15 +356,53 @@ export class DashPlayer implements IMediaPlayer {
     }
   }
 
-  load(src: string, requestPolicy?: RequestPolicy) {
+  onLiveChange(callback: (isLive: boolean, playheadDate: Date | null, liveEdgeOffsetSeconds?: number) => void) {
+    this.liveCallback = callback;
+  }
+
+  onStreamEnded(callback: () => void) {
+    this.streamEndedCallback = callback;
+  }
+
+  /** dash.js's own edge-seek - no-op if not currently live/not ready (ADR-0001 D5). */
+  goToLive(): void {
+    if (this.wasLive) this.player?.seekToOriginalLive?.();
+  }
+
+  // result-cycle2.md, defect 8 - dash.js's own configured target live delay
+  // (`getTargetLiveDelay()` -> `playbackController.getOriginalLiveDelay()`,
+  // dash.all.debug.js) is exactly "the normal distance from now back to the
+  // live edge" this engine targets - mirrors hls-player.ts's
+  // targetLatency/liveSyncPosition. Throws PLAYBACK_NOT_INITIALIZED_ERROR
+  // before initializePlayback() has run (dash.all.debug.js's own guard) -
+  // not otherwise reachable from reportLive() (only called from
+  // STREAM_INITIALIZED/PLAYBACK_TIME_UPDATED, both post-init), but guarded
+  // anyway since it's a public SDK call this file doesn't control.
+  private computeLiveEdgeOffset(): number | undefined {
+    try {
+      const delay = this.player?.getTargetLiveDelay?.();
+      return typeof delay === 'number' && Number.isFinite(delay) ? delay : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  load(src: string, requestPolicy?: RequestPolicy, live?: boolean | 'auto') {
     this.pendingSrc = src;
     this.requestPolicy = requestPolicy;
+    this.liveOpt = live; // result-cycle2.md, defect 4
+    this.wasLive = false;
     if (this.destroyed || !this.player) return;
+    // dash.js tears down and re-attaches its native `play` listener for
+    // every source (reset -> PlaybackController.initialize()), so the same
+    // race reopens on each load() of a reused player.
+    this.playGuard.arm();
     this.applyLoad(src);
   }
 
   destroy() {
     this.destroyed = true;
+    this.playGuard.release(false);
 
     if (this.nativeErrorHandler) {
       this.nativeEl.removeEventListener('error', this.nativeErrorHandler);

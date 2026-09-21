@@ -57,10 +57,18 @@ function setupMocks() {
     addRequestInterceptor: jest.fn(),
     removeRequestInterceptor: jest.fn(),
     destroy: jest.fn(),
+    isDynamic: jest.fn().mockReturnValue(false),
+    timeAsUTC: jest.fn().mockReturnValue(0),
+    seekToOriginalLive: jest.fn(),
   };
 
   const MediaPlayerFactory: any = jest.fn(() => ({ create: () => mockPlayerInstance }));
-  MediaPlayerFactory.events = { ERROR: 'error', STREAM_INITIALIZED: 'streamInitialized' };
+  MediaPlayerFactory.events = {
+    ERROR: 'error',
+    STREAM_INITIALIZED: 'streamInitialized',
+    PLAYBACK_TIME_UPDATED: 'playbackTimeUpdated',
+    DYNAMIC_TO_STATIC: 'dynamicToStatic',
+  };
   MediaPlayerFactory.errors = DASHJS_ERRORS;
 
   (window as any).dashjs = { MediaPlayer: MediaPlayerFactory };
@@ -302,9 +310,17 @@ function deferredDashImport() {
     addRequestInterceptor: jest.fn(),
     removeRequestInterceptor: jest.fn(),
     destroy: jest.fn(),
+    isDynamic: jest.fn().mockReturnValue(false),
+    timeAsUTC: jest.fn().mockReturnValue(0),
+    seekToOriginalLive: jest.fn(),
   };
   const MediaPlayerFactory: any = jest.fn(() => ({ create: () => mockPlayerInstance }));
-  MediaPlayerFactory.events = { ERROR: 'error', STREAM_INITIALIZED: 'streamInitialized' };
+  MediaPlayerFactory.events = {
+    ERROR: 'error',
+    STREAM_INITIALIZED: 'streamInitialized',
+    PLAYBACK_TIME_UPDATED: 'playbackTimeUpdated',
+    DYNAMIC_TO_STATIC: 'dynamicToStatic',
+  };
   MediaPlayerFactory.errors = DASHJS_ERRORS;
   const dashjsModule = { MediaPlayer: MediaPlayerFactory };
 
@@ -526,5 +542,504 @@ describe('DashPlayer request policy (ADR-0001 D4)', () => {
     player.destroy();
 
     expect(mockPlayerInstance.removeRequestInterceptor).toHaveBeenCalledWith(interceptor);
+  });
+});
+
+// ADR-0001 D5
+async function setupLivePlayer(liveOpt?: boolean | 'auto') {
+  const { handlers, mockPlayerInstance } = setupMocks();
+  const nativeEl = createVideoElement();
+  const player = new DashPlayer(nativeEl, undefined, liveOpt);
+  await player.onReady;
+  return { player, handlers, mockPlayerInstance, nativeEl };
+}
+
+describe('DashPlayer live (ADR-0001 D5)', () => {
+  afterEach(() => {
+    delete (window as any).dashjs;
+  });
+
+  it("'auto': isLive follows player.isDynamic(), playheadDate from player.timeAsUTC() (ms)", async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    mockPlayerInstance.timeAsUTC.mockReturnValue(1735689600); // seconds since epoch
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, new Date(1735689600 * 1000), undefined);
+  });
+
+  it('live: false never reports live, even when isDynamic() says so', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer(false);
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).not.toHaveBeenCalled();
+  });
+
+  it("live: true forces isLive even when isDynamic() says it isn't (playheadDate stays null - no real dynamic manifest to read UTC time from)", async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer(true);
+    mockPlayerInstance.isDynamic.mockReturnValue(false);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, null, undefined);
+  });
+
+  it('PLAYBACK_TIME_UPDATED recomputes live info continuously during playback', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.playbackTimeUpdated();
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, expect.any(Date), undefined);
+  });
+
+  it('streamended fires once on DYNAMIC_TO_STATIC, only when it was live', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    const onStreamEnded = jest.fn();
+    player.onStreamEnded(onStreamEnded);
+
+    handlers.dynamicToStatic(); // never was live - no-op
+    expect(onStreamEnded).not.toHaveBeenCalled();
+
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    handlers.streamInitialized();
+    handlers.dynamicToStatic();
+    handlers.dynamicToStatic(); // must not re-fire
+
+    expect(onStreamEnded).toHaveBeenCalledTimes(1);
+  });
+
+  it('goToLive() calls seekToOriginalLive() only while live', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+
+    player.goToLive();
+    expect(mockPlayerInstance.seekToOriginalLive).not.toHaveBeenCalled();
+
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    handlers.streamInitialized();
+    player.goToLive();
+
+    expect(mockPlayerInstance.seekToOriginalLive).toHaveBeenCalledTimes(1);
+  });
+
+  // result-cycle2.md, defect 6
+  it('playheadDate is null (not Invalid Date) when timeAsUTC() returns NaN', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    mockPlayerInstance.timeAsUTC.mockReturnValue(NaN); // dash.js before play()/on VOD
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, null, undefined);
+  });
+
+  // result-cycle2.md, defect 8
+  it('computeLiveEdgeOffset: reports getTargetLiveDelay() as the live-edge offset', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    (mockPlayerInstance as any).getTargetLiveDelay = jest.fn().mockReturnValue(12);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, expect.any(Date), 12);
+  });
+
+  it('computeLiveEdgeOffset: swallows getTargetLiveDelay() throwing (PLAYBACK_NOT_INITIALIZED) and reports undefined', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    (mockPlayerInstance as any).getTargetLiveDelay = jest.fn().mockImplementation(() => { throw new Error('PLAYBACK_NOT_INITIALIZED_ERROR'); });
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    expect(() => handlers.streamInitialized()).not.toThrow();
+    expect(onLiveChange).toHaveBeenCalledWith(true, expect.any(Date), undefined);
+  });
+
+  // result-cycle2.md, defect 4
+  it('load() reapplies a reconfigured live option to the very next report', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer(true); // forced live
+    mockPlayerInstance.isDynamic.mockReturnValue(false);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    player.load('https://example.com/b.mpd', undefined, false); // reconfigured to off
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).not.toHaveBeenCalled();
+  });
+});
+
+// result-cycle3.md, defect 1 - a host that calls play() (or sets the native
+// `autoplay` attribute) before dash.js's PlaybackController has attached its
+// own native `play` listener silently disables the periodic MPD reload for
+// the rest of that session (see dash-player.ts's installPlayGuard()/
+// armAutoplayGuard()/releasePlayGuard() comments for the mechanism). These
+// are the unit-level proof that the guard itself defers/replays correctly;
+// e2e/tests/live.spec.ts proves the end-to-end consequence (autonomous
+// reload) against the real SDK.
+describe('DashPlayer play()/autoplay race guard (result-cycle3.md, defect 1)', () => {
+  afterEach(() => {
+    delete (window as any).dashjs;
+  });
+
+  it('defers a play() called before STREAM_INITIALIZED, replaying it once dash.js is actually listening', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    // The host calls play() in the same tick as load()/before core.ready -
+    // must not reach the native element yet.
+    const playPromise = nativeEl.play();
+    expect(originalPlay).not.toHaveBeenCalled();
+
+    handlers.streamInitialized(); // dash.js's own play listener is now attached
+
+    await playPromise;
+    expect(originalPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('a play() called after STREAM_INITIALIZED already fired passes straight through, unqueued', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    handlers.streamInitialized();
+
+    await nativeEl.play();
+
+    expect(originalPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('the native autoplay attribute is suppressed until STREAM_INITIALIZED, then replayed with no explicit play() call needed', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+    nativeEl.autoplay = true; // <video autoplay> / <ultra-media autoplay>
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    expect(nativeEl.autoplay).toBe(false); // suppressed - no uncontrolled native pre-ready autoplay
+    expect(originalPlay).not.toHaveBeenCalled();
+
+    handlers.streamInitialized();
+
+    expect(originalPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('an element with no autoplay attribute and no play() call is left untouched', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    handlers.streamInitialized();
+
+    expect(originalPlay).not.toHaveBeenCalled();
+    expect(nativeEl.autoplay).toBe(false);
+  });
+
+  it('destroy() before STREAM_INITIALIZED ever fires drops a queued play() instead of replaying it onto a torn-down element, and restores the native play()', async () => {
+    setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    // Queued. Interrupted by the teardown, it rejects with AbortError - the
+    // same outcome HTMLMediaElement gives a pending play() that a new load or
+    // a pause() interrupts. (It used to resolve immediately, before any
+    // playback existed: the closing review flagged that as a lie to the host.)
+    const playPromise = nativeEl.play();
+    player.destroy();
+
+    await expect(playPromise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(originalPlay).not.toHaveBeenCalled(); // never actually reached the (now torn-down) element
+
+    // wrapper undone - the host's own play() is back, by identity.
+    expect(nativeEl.play).toBe(originalPlay);
+    nativeEl.play();
+    expect(originalPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('a fatal error before STREAM_INITIALIZED also releases a queued play(), invoking the real native play()', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const originalPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = originalPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    player.onError(() => {});
+
+    const playPromise = nativeEl.play();
+    handlers.error({ error: { code: 25, message: 'manifest 404' } }); // DOWNLOAD_ERROR_ID_MANIFEST_CODE - fatal
+
+    await expect(playPromise).resolves.toBeUndefined();
+    expect(originalPlay).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Closing review of the play() guard: it patches a method of a <video> the
+// HOST owns (and that the host's ad stack also drives), so it has to behave
+// exactly like play()/pause() would, and leave nothing behind.
+describe('DashPlayer play() guard: promise semantics, pause, restore, reuse', () => {
+  afterEach(() => {
+    delete (window as any).dashjs;
+  });
+
+  it('the deferred play() promise settles with the REAL play() outcome (rejection propagates)', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const denied = Object.assign(new Error('denied'), { name: 'NotAllowedError' });
+    nativeEl.play = jest.fn().mockRejectedValue(denied);
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    let settled: string | null = null;
+    const playPromise = nativeEl.play().then(() => { settled = 'resolved'; }, (e: any) => { settled = e.name; });
+    await Promise.resolve();
+    expect(settled).toBeNull(); // still pending: the real play() has not run yet
+
+    handlers.streamInitialized();
+    await playPromise;
+    expect(settled).toBe('NotAllowedError');
+  });
+
+  it('pause() while the play() is deferred cancels the intent and rejects the pending promise with AbortError', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    nativeEl.pause = jest.fn();
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    const outcome = nativeEl.play().then(() => 'resolved', (e: any) => e.name);
+    nativeEl.pause();
+    handlers.streamInitialized();
+
+    expect(await outcome).toBe('AbortError');
+    expect(realPlay).not.toHaveBeenCalled();
+  });
+
+  it('restores the host\'s own play/pause functions by identity, and leaves no own property when there was none', async () => {
+    const { handlers } = setupMocks();
+    const withOverride = createVideoElement();
+    const hostPlay = jest.fn().mockResolvedValue(undefined);
+    withOverride.play = hostPlay;
+    const p1 = new DashPlayer(withOverride);
+    await p1.onReady;
+    handlers.streamInitialized();
+    expect(withOverride.play).toBe(hostPlay);
+
+    const pristine = createVideoElement();
+    const p2 = new DashPlayer(pristine);
+    await p2.onReady;
+    expect(Object.prototype.hasOwnProperty.call(pristine, 'play')).toBe(true); // guarded
+    p2.destroy();
+    expect(Object.prototype.hasOwnProperty.call(pristine, 'play')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(pristine, 'pause')).toBe(false);
+  });
+
+  it('suppresses the autoplay attribute while guarded and restores it afterwards', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    nativeEl.autoplay = true;
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    expect(nativeEl.autoplay).toBe(false);
+
+    handlers.streamInitialized();
+    await Promise.resolve();
+    expect(nativeEl.autoplay).toBe(true);
+    expect(realPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('destroy() while a play() is deferred rejects it with AbortError and never plays', async () => {
+    setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    const outcome = nativeEl.play().then(() => 'resolved', (e: any) => e.name);
+    player.destroy();
+
+    expect(await outcome).toBe('AbortError');
+    expect(realPlay).not.toHaveBeenCalled();
+    expect(nativeEl.play).toBe(realPlay);
+  });
+
+  it('re-arms on every load() of a reused player (dash.js re-attaches its native play listener per source)', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    player.load('https://example.com/a.mpd');
+    handlers.streamInitialized();
+    expect(nativeEl.play).toBe(realPlay);
+
+    player.load('https://example.com/b.mpd');
+    const pending = nativeEl.play();
+    expect(realPlay).not.toHaveBeenCalled();
+    handlers.streamInitialized();
+    await pending;
+    expect(realPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failing setup leaves the element un-patched', async () => {
+    setupMocks();
+    (window as any).dashjs.MediaPlayer = jest.fn(() => ({ create: () => { throw new Error('sdk broke'); } }));
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady.catch(() => {});
+    expect(nativeEl.play).toBe(realPlay);
+  });
+});
+
+describe('DashPlayer play() guard: never left armed', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    delete (window as any).dashjs;
+  });
+
+  it('releases (and plays) if attachSource() throws on a reused player', async () => {
+    const { handlers, mockPlayerInstance } = setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    player.load('https://example.com/a.mpd');
+    handlers.streamInitialized();
+
+    mockPlayerInstance.attachSource.mockImplementationOnce(() => { throw new Error('bad url'); });
+    expect(() => player.load('::bad::')).not.toThrow();
+    expect(nativeEl.play).toBe(realPlay);
+  });
+
+  it('a watchdog releases the guard if dash.js never reports STREAM_INITIALIZED nor an error', async () => {
+    jest.useFakeTimers();
+    setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    const outcome = nativeEl.play().then(() => 'resolved', (e: any) => e.name);
+    expect(realPlay).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(15000);
+    expect(await outcome).toBe('resolved'); // never a play() hanging forever
+    expect(realPlay).toHaveBeenCalledTimes(1);
+    expect(nativeEl.play).toBe(realPlay);
+  });
+
+  it('leaves a play/pause override installed by someone else AFTER arming (e.g. an ad SDK) untouched on release', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+
+    const adSdkPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = adSdkPlay; // installed while we are armed
+    handlers.streamInitialized();
+
+    expect(nativeEl.play).toBe(adSdkPlay);
+  });
+});
+
+describe('DashPlayer play() guard: closing review leftovers', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    delete (window as any).dashjs;
+  });
+
+  it('a successive load() restarts the watchdog instead of inheriting the previous load\'s deadline', async () => {
+    jest.useFakeTimers();
+    setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    player.load('https://example.com/a.mpd');
+    nativeEl.play().catch(() => {});
+
+    jest.advanceTimersByTime(14900);
+    player.load('https://example.com/b.mpd'); // still armed: the deadline must start over
+    jest.advanceTimersByTime(200);
+    expect(realPlay).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(15000);
+    expect(realPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('a fatal native <video> error releases the guard right away', async () => {
+    setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    player.onError(jest.fn());
+    nativeEl.play().catch(() => {});
+
+    Object.defineProperty(nativeEl, 'error', { value: fakeMediaError(3, 'decode failed'), configurable: true });
+    nativeEl.dispatchEvent(new Event('error'));
+
+    expect(nativeEl.play).toBe(realPlay);
+  });
+
+  it('a fatal dash.js error releases the guard even when the host registered no onError', async () => {
+    const { handlers } = setupMocks();
+    const nativeEl = createVideoElement();
+    const realPlay = jest.fn().mockResolvedValue(undefined);
+    nativeEl.play = realPlay;
+    const player = new DashPlayer(nativeEl);
+    await player.onReady;
+    nativeEl.play().catch(() => {});
+
+    handlers.error({ error: { code: DASHJS_ERRORS.DOWNLOAD_ERROR_ID_MANIFEST_CODE, message: 'manifest 404' } });
+
+    expect(nativeEl.play).toBe(realPlay);
   });
 });

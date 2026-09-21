@@ -119,6 +119,12 @@ const EXPECTED_MEMBER_KINDS: Record<string, string> = {
   // HTML attribute (headers with tokens don't belong in markup), so this
   // get/set property is the only new own member the step 4 brief adds.
   request: 'accessor',
+  // ADR-0001 D5 - live: isLive changes from a plain public field (still a
+  // getter here - same external shape) to a real core-backed accessor;
+  // liveInfo/streamType/targetLiveWindow/liveEdgeStart are new getters,
+  // goToLive() a new method (see live.spec.ts for the full behavior proof).
+  isLive: 'getter', liveInfo: 'getter', goToLive: 'method',
+  streamType: 'getter', targetLiveWindow: 'getter', liveEdgeStart: 'getter',
   // custom-media-element's own surface (loadComplete/isLoaded were
   // super-media-element's - custom-media-element drops that convention
   // entirely and replaces them with init/handleEvent, see "Diferenças da
@@ -170,9 +176,10 @@ test.describe('public contract: full prototype member inventory', () => {
   // specific private method names), so this list is updated accordingly -
   // everything else (own public surface + all 79 inherited members) is
   // unchanged, which is exactly what the rest of this file's tests confirm.
-  // ADR-0001 D4 (step 4): `request` is a new own accessor - 13 own + 79
-  // inherited = 92 (was 91: 12 own + 79 inherited, see docs/public-api.md).
-  test('exactly the 92 documented members exist (13 own + 79 inherited), each with the right descriptor kind', async ({ page }) => {
+  // ADR-0001 D5 (step 5): live adds 6 own members (isLive, liveInfo,
+  // goToLive, streamType, targetLiveWindow, liveEdgeStart) - 19 own + 79
+  // inherited = 98 (was 92: 13 own + 79 inherited, see docs/public-api.md).
+  test('exactly the 98 documented members exist (19 own + 79 inherited), each with the right descriptor kind', async ({ page }) => {
     await gotoPlayer(page);
     const kinds = await collectMemberKinds(page);
     expect(kinds).toEqual(EXPECTED_MEMBER_KINDS);
@@ -340,18 +347,28 @@ test.describe('public contract: attribute <-> property reflection', () => {
   });
 });
 
-test.describe('public contract: "live" attribute is observed but inert (Descoberta)', () => {
-  test('isLive stays false regardless of the "live" attribute', async ({ page }) => {
+// ADR-0001 D5 (step 5): the "live" attribute used to be in
+// observedAttributes with no effect at all - see e2e/tests/live.spec.ts for
+// the full real-engine proof that it now seeds options.live and isLive/
+// liveInfo/streamType/targetLiveWindow/goToLive() mirror the core. This
+// block keeps only the no-src edge case: with nothing loaded, there's no
+// core yet, so isLive/liveInfo/streamType/targetLiveWindow stay at their
+// documented neutral values regardless of the attribute - not "the
+// attribute does nothing" any more, just "there's no player to be live".
+test.describe('public contract: "live" attribute with no src loaded (no core yet)', () => {
+  test('isLive/liveInfo/streamType/targetLiveWindow stay neutral regardless of the "live" attribute', async ({ page }) => {
     await gotoPlayer(page);
     const result = await page.evaluate(() => {
       const el = document.querySelector('#player') as any;
-      const before = el.isLive;
+      const before = { isLive: el.isLive, liveInfo: el.liveInfo, streamType: el.streamType, targetLiveWindow: el.targetLiveWindow };
       el.setAttribute('live', '');
-      const after = el.isLive;
+      const after = { isLive: el.isLive, liveInfo: el.liveInfo, streamType: el.streamType, targetLiveWindow: el.targetLiveWindow };
       el.removeAttribute('live');
       return { before, after };
     });
-    expect(result).toEqual({ before: false, after: false });
+    const neutral = { isLive: false, liveInfo: undefined, streamType: 'on-demand', targetLiveWindow: NaN };
+    expect(result.before).toEqual(neutral);
+    expect(result.after).toEqual(neutral);
   });
 });
 

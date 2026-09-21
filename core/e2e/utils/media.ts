@@ -17,6 +17,8 @@ const INSTRUMENTED_EVENTS = [
   'suspend',
   'stalled',
   'canplay',
+  'livechange',
+  'streamended',
 ] as const;
 
 /** Navigates to the harness page hosting a bare <ultra-media> element. */

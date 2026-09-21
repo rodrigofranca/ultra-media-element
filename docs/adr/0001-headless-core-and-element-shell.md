@@ -300,6 +300,60 @@ de `type`) já custa ~1.36 kB gzip só por si. Ver
 `fronts/request-policy/result.md` para os números completos e a pergunta
 em aberto.
 
+## Status da etapa 5
+
+Implementada por completo e testada (hls.js/dash.js/nativo **e o fallback
+HLS nativo sem MSE**, `options.live` reconfigurável a partir do próximo
+`load()`, `core.live`/`goToLive()`, eventos `livechange`/`streamended`,
+atributo `live`/`isLive`/`liveInfo`/`goToLive()`/`streamType`/
+`targetLiveWindow`/`liveEdgeStart` na casca, gate media-chrome de
+`media-live-button`), com um fixture de live hermético e determinístico
+(HLS: janela deslizante controlada por contagem de recargas; DASH:
+`SegmentTemplate` de duração fixa ancorado ao relógio real - ver
+`fronts/live/result-cycle2.md` "fixture DASH" para por que os dois engines
+usam mecanismos diferentes). `core.live.liveEdge`/`dvr` são derivados da
+distância real até a borda de cada engine (não um limiar fixo), e
+`playheadDate`/`latency` são recomputados sob demanda a cada leitura em vez
+de via evento - ver `fronts/live/result-cycle2.md`.
+
+**Revisão independente do ciclo 1 (`fronts/live/result-cycle2.md`) corrigiu
+11 defeitos** encontrados na entrega original, entre eles: o fallback HLS
+nativo não emitia live nenhum; estado de live vazava entre trocas de fonte
+do mesmo formato; `core.live`/`NEUTRAL_LIVE` eram mutáveis e compartilhados;
+`options.live` reconfigurado não chegava a um engine reaproveitado;
+`streamended` do hls.js podia disparar por causa de uma rendition diferente
+da ativa; `playheadDate` do dash.js podia virar `Invalid Date`; e a
+conclusão de que "dash.js não recarrega MPD dinâmico" estava errada - a
+causa real era chamar `play()` antes do dash.js terminar de anexar seu
+próprio listener nativo de `play` (ver `fronts/live/result-cycle2.md`
+"Descobertas"). Todos corrigidos com `/core` e a casca dentro dos tetos de
+produto fixos (16/12 kB e 24/16 kB gzip, ESM/UMD) - nenhum corte de escopo
+foi necessário desta vez.
+
+## Status da etapa 5 - revisão (ciclo 3)
+
+Uma segunda revisão independente confirmou 7 de 9 alegações do ciclo 2 e
+apontou **três defeitos**, todos corrigidos: (1, bloqueante) mesmo depois do
+ciclo 2 endurecer os e2e para esperar o primeiro `livechange` antes de
+`play()`, o produto em si continuava vulnerável a um host que chama
+`video.play()` no mesmo tick de `load()` (ou usa o atributo `autoplay`) -
+exatamente o padrão do primeiro host de produção (player de notícias ao
+vivo com autoplay); `DashPlayer` agora intercepta `play()`/o atributo
+`autoplay` e adia a chamada real até confirmar que o listener nativo do
+dash.js já está anexado (`guardPlay()`/`releasePlay()`), sem depender de
+nenhum internal privado da SDK. hls.js e o fallback nativo não têm a mesma
+corrida (a recarga de playlist do hls.js não depende do evento nativo
+`play`), confirmado por e2e dedicado. (2) `playheadDate` ainda podia
+escapar como `Invalid Date` em `native-live.ts` (fallback nativo/HLS sem
+MSE) e em `UltraMediaCore.computePlayheadDate()` - regra única
+centralizada em `normalizeLiveDate()`. (3) um `LEVEL_LOADED` tardio de uma
+fonte já superada por `load()` podia repovoar o estado de live de outra
+fonte no mesmo instância hls.js, já que o filtro por nível não protegia a
+janela em que `currentLevel`/`loadLevel` ainda são `-1`; o listener agora é
+religado a cada `load()`, preso à geração da carga. Ver
+`fronts/live/result-cycle3.md` para evidência vermelho→verde por defeito,
+a causa exata na SDK do dash.js e os tamanhos antes/depois.
+
 ## Open questions
 
 1. Build target for `/core`: which minimum Tizen/webOS years? Until answered,

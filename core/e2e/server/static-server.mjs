@@ -30,9 +30,11 @@ import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { handleLiveRoute } from './live-fixture.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CORE_ROOT = path.resolve(__dirname, '..', '..');
+const FIXTURES_ROOT = path.join(CORE_ROOT, 'e2e', 'fixtures');
 
 const ROUTES = [
   { prefix: '/dist/', root: path.join(CORE_ROOT, 'dist') },
@@ -111,6 +113,11 @@ export function createServer() {
       res.end('Not found');
       return;
     }
+
+    // ADR-0001 D5 - dynamic live HLS/DASH fixture (playlists/MPDs regenerate
+    // per request, unlike everything else this server serves, which is
+    // read-once-and-cached static content - see live-fixture.mjs).
+    if (url.startsWith('/live/') && handleLiveRoute(req, res, FIXTURES_ROOT)) return;
 
     resolveFile(url).then((found) => {
       if (!found) {

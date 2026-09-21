@@ -70,3 +70,24 @@ test.describe('dash', () => {
     ]);
   });
 });
+
+// The DASH play() guard (players/play-guard.ts) arms for every DASH load,
+// because live-ness is only known once the manifest arrives. It must be
+// invisible for VOD: a host that calls play() in the same tick as the src
+// assignment (autoplay-style) still gets playback, and a settled promise.
+test.describe('dash VOD with an immediate play()', () => {
+  test('play() in the same tick as src plays and its promise settles', async ({ page }) => {
+    await gotoPlayer(page);
+    const outcome = await page.evaluate(async (src) => {
+      const el = document.getElementById('player') as any;
+      el.muted = true;
+      el.src = src;
+      return el.play().then(() => 'resolved', (e: Error) => e.name);
+    }, FIXTURE);
+    expect(outcome).toBe('resolved');
+    await expect.poll(async () => (await getProp(page, 'currentTime')) as number, { timeout: 10_000 }).toBeGreaterThan(0.5);
+    const hasOwnPlay = await page.evaluate(() =>
+      Object.prototype.hasOwnProperty.call((document.getElementById('player') as any).nativeEl, 'play'));
+    expect(hasOwnPlay).toBe(false); // guard gone once the stream initialized
+  });
+});

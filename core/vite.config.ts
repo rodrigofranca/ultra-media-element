@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { defineConfig } from 'vite';
+import { defineConfig, transformWithEsbuild } from 'vite';
 import mkcert from 'vite-plugin-mkcert';
 import replace from '@rollup/plugin-replace';
 import path from 'path';
@@ -35,6 +35,29 @@ export default defineConfig(({ command, mode }) => {
         preventAssignment: true
       }),
       mode === 'development' && mkcert(),
+      // Vite's lib mode deliberately leaves the `es` format un-minified
+      // (whitespace and every source comment ship verbatim) - only `umd` is
+      // minified. Anyone loading the ESM straight from a CDN with
+      // <script type="module"> would download ~30% more than needed, and
+      // size-limit was budgeting documentation instead of code. Minify the
+      // es chunk ourselves, keeping the per-entry syntax target.
+      {
+        name: 'minify-es-lib-output',
+        apply: 'build',
+        renderChunk: {
+          order: 'post',
+          async handler(code, chunk, outputOptions) {
+            if (outputOptions.format !== 'es') return null;
+            const result = await transformWithEsbuild(code, chunk.fileName, {
+              minify: true,
+              target: isCore ? 'es2017' : 'esnext',
+              sourcemap: true,
+              legalComments: 'none',
+            });
+            return { code: result.code, map: result.map };
+          },
+        },
+      },
       dts({
         outputDir: 'dist',
         entryRoot: 'src',               // foca no src/index.ts e src/ad.ts
