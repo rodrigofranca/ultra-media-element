@@ -568,7 +568,7 @@ describe('DashPlayer live (ADR-0001 D5)', () => {
 
     handlers.streamInitialized();
 
-    expect(onLiveChange).toHaveBeenCalledWith(true, new Date(1735689600 * 1000));
+    expect(onLiveChange).toHaveBeenCalledWith(true, new Date(1735689600 * 1000), undefined);
   });
 
   it('live: false never reports live, even when isDynamic() says so', async () => {
@@ -590,7 +590,7 @@ describe('DashPlayer live (ADR-0001 D5)', () => {
 
     handlers.streamInitialized();
 
-    expect(onLiveChange).toHaveBeenCalledWith(true, null);
+    expect(onLiveChange).toHaveBeenCalledWith(true, null, undefined);
   });
 
   it('PLAYBACK_TIME_UPDATED recomputes live info continuously during playback', async () => {
@@ -601,7 +601,7 @@ describe('DashPlayer live (ADR-0001 D5)', () => {
 
     handlers.playbackTimeUpdated();
 
-    expect(onLiveChange).toHaveBeenCalledWith(true, expect.any(Date));
+    expect(onLiveChange).toHaveBeenCalledWith(true, expect.any(Date), undefined);
   });
 
   it('streamended fires once on DYNAMIC_TO_STATIC, only when it was live', async () => {
@@ -631,5 +631,56 @@ describe('DashPlayer live (ADR-0001 D5)', () => {
     player.goToLive();
 
     expect(mockPlayerInstance.seekToOriginalLive).toHaveBeenCalledTimes(1);
+  });
+
+  // result-cycle2.md, defect 6
+  it('playheadDate is null (not Invalid Date) when timeAsUTC() returns NaN', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    mockPlayerInstance.timeAsUTC.mockReturnValue(NaN); // dash.js before play()/on VOD
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, null, undefined);
+  });
+
+  // result-cycle2.md, defect 8
+  it('computeLiveEdgeOffset: reports getTargetLiveDelay() as the live-edge offset', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    (mockPlayerInstance as any).getTargetLiveDelay = jest.fn().mockReturnValue(12);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).toHaveBeenCalledWith(true, expect.any(Date), 12);
+  });
+
+  it('computeLiveEdgeOffset: swallows getTargetLiveDelay() throwing (PLAYBACK_NOT_INITIALIZED) and reports undefined', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer('auto');
+    mockPlayerInstance.isDynamic.mockReturnValue(true);
+    (mockPlayerInstance as any).getTargetLiveDelay = jest.fn().mockImplementation(() => { throw new Error('PLAYBACK_NOT_INITIALIZED_ERROR'); });
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    expect(() => handlers.streamInitialized()).not.toThrow();
+    expect(onLiveChange).toHaveBeenCalledWith(true, expect.any(Date), undefined);
+  });
+
+  // result-cycle2.md, defect 4
+  it('load() reapplies a reconfigured live option to the very next report', async () => {
+    const { player, handlers, mockPlayerInstance } = await setupLivePlayer(true); // forced live
+    mockPlayerInstance.isDynamic.mockReturnValue(false);
+    const onLiveChange = jest.fn();
+    player.onLiveChange(onLiveChange);
+
+    player.load('https://example.com/b.mpd', undefined, false); // reconfigured to off
+
+    handlers.streamInitialized();
+
+    expect(onLiveChange).not.toHaveBeenCalled();
   });
 });

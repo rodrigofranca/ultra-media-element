@@ -21,11 +21,11 @@ describe('watchNativeLive (ADR-0001 D5)', () => {
 
     setDuration(el, Infinity);
     el.dispatchEvent(new Event('durationchange'));
-    expect(report).toHaveBeenLastCalledWith(true, null);
+    expect(report).toHaveBeenLastCalledWith(true, null, 2);
 
     setDuration(el, 42);
     el.dispatchEvent(new Event('durationchange'));
-    expect(report).toHaveBeenLastCalledWith(false, null);
+    expect(report).toHaveBeenLastCalledWith(false, null, undefined);
   });
 
   it('live: false never reports live even when duration is Infinity', () => {
@@ -47,7 +47,7 @@ describe('watchNativeLive (ADR-0001 D5)', () => {
     setDuration(el, 42);
     el.dispatchEvent(new Event('durationchange'));
 
-    expect(report).toHaveBeenCalledWith(true, null);
+    expect(report).toHaveBeenCalledWith(true, null, 2);
   });
 
   it('playheadDate combines getStartDate() with currentTime when the browser exposes it (Safari extension)', () => {
@@ -60,7 +60,7 @@ describe('watchNativeLive (ADR-0001 D5)', () => {
     setDuration(el, Infinity);
     el.dispatchEvent(new Event('durationchange'));
 
-    expect(report).toHaveBeenCalledWith(true, new Date('2026-01-01T00:00:10Z'));
+    expect(report).toHaveBeenCalledWith(true, new Date('2026-01-01T00:00:10Z'), 2);
   });
 
   it('ended() fires exactly once on the live -> non-live transition, not on later duration changes', () => {
@@ -135,7 +135,7 @@ describe('VideoPlayer live (ADR-0001 D5, via NativeMediaPlayer)', () => {
 
     setDuration(el, Infinity);
     el.dispatchEvent(new Event('durationchange'));
-    expect(onLiveChange).toHaveBeenCalledWith(true, null);
+    expect(onLiveChange).toHaveBeenCalledWith(true, null, 2);
 
     player.goToLive();
     expect(el.currentTime).toBe(20);

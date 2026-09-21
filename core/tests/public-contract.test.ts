@@ -226,6 +226,29 @@ describe('live (ADR-0001 D5)', () => {
     el.remove();
   });
 
+  // result-cycle2.md, defect 4 - end to end: toggling the attribute between
+  // two same-format loads (engine reused) must reach the *next* load(), not
+  // just update core.configure()'s bookkeeping.
+  it('toggling the "live" attribute between two same-format loads changes what the reused engine\'s next load() receives', () => {
+    const player = fakePlayer();
+    (PlayerFactory.create as jest.Mock).mockImplementation((() => player) as any);
+
+    const el = createElement();
+    document.body.appendChild(el);
+    el.src = 'https://example.com/a.m3u8';
+
+    el.setAttribute('live', '');
+    el.src = 'https://example.com/b.m3u8'; // same format (hls.js) - engine reused via load()
+
+    expect(player.load).toHaveBeenLastCalledWith('https://example.com/b.m3u8', undefined, true);
+
+    el.removeAttribute('live');
+    el.src = 'https://example.com/c.m3u8';
+
+    expect(player.load).toHaveBeenLastCalledWith('https://example.com/c.m3u8', undefined, 'auto');
+    el.remove();
+  });
+
   it('isLive/liveInfo/streamType/targetLiveWindow mirror the core once the engine reports live, and goToLive() delegates', () => {
     let liveCb: ((isLive: boolean, playheadDate: Date | null) => void) | undefined;
     const goToLive = jest.fn();
